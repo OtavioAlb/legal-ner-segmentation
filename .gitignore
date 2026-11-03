@@ -1,0 +1,23 @@
+# Private source data and artifacts
+/data/raw/
+/data/interim/
+/data/processed/
+/outputs/
+/mlruns/
+/mlruns3/
+/models/
+/*.zip
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.parquet
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+*.egg-info/
+dist/
+build/

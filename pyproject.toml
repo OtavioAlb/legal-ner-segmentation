@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "legal-ner-segmentation"
+version = "0.1.0"
+description = "Reproducible NER and document segmentation of Portuguese judicial decisions"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+xlsx = ["openpyxl>=3.1"]
+dev = ["pytest>=8", "ruff>=0.8", "openpyxl>=3.1"]
+
+[project.scripts]
+legal-nlp-ingest-phase1 = "legal_nlp.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
