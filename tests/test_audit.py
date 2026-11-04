@@ -77,3 +77,39 @@ def test_audit_classifies_reviews_and_blank_offsets(tmp_path):
     assert report["reviewer_agreement_counts"]["Bob"]["agree"] == 1
     assert report["manual_review_queue_count"] == 1
     assert (tmp_path / "audit" / "unknown_labels_review.jsonl").exists()
+
+
+def test_disagreement_is_queued_even_when_span_is_structurally_valid(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "documents.jsonl").write_text(
+        json.dumps({"document_id": "phase1:1", "text": "Legal text"}) + "\n",
+        encoding="utf-8",
+    )
+    ann = {
+        "annotation_id": "review1", "source_row": 9,
+        "document_id": "phase1:1", "source_document_id": "1",
+        "label_original": "SEG_EMENTA", "task": "SEG", "start": 0,
+        "end": 5, "span_text_source": "Legal",
+        "review_state": "revised_complete",
+        "review_flags": [], "issues": [],
+        "disagreement_reviewers": ["R2"],
+        "changed_review_fields": ["label"],
+        "correction_status": "revised_fields_differ_pending_verification",
+        "reviewer_opinions": {
+            "R1": {"status": "not_recorded", "agreement_raw": None},
+            "R2": {"status": "disagree", "agreement_raw": "NÃO"},
+        },
+    }
+    (source / "annotations.jsonl").write_text(
+        json.dumps(ann, ensure_ascii=False) + "\n", encoding="utf-8",
+    )
+    result = audit_phase1(source, tmp_path / "audit")
+    assert result["annotations_without_issues"] == 1
+    assert result["annotations_with_explicit_disagreement"] == 1
+    assert result["manual_review_queue_count"] == 1
+    assert result["reviewer_agreement_counts"]["R1"]["not_recorded"] == 1
+    assert result["reviewer_agreement_counts"]["R2"]["disagree"] == 1
+    queued = json.loads((tmp_path / "audit" / "review_queue.jsonl").read_text())
+    assert queued["correction_status"] == "revised_fields_differ_pending_verification"
+    assert queued["adjudication_status"] == "pending_manual_review"
