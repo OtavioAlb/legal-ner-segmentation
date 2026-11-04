@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import re
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -105,6 +106,19 @@ def normalize_document_id(identifier: str | None) -> str | None:
     cleaned = identifier.strip()
     match = re.fullmatch(r"([0-9]+)\.0+", cleaned)
     return match.group(1) if match else cleaned
+
+
+def normalize_review_vote(value: Any) -> str:
+    """Classify explicit reviewer answers without imputing missing votes."""
+    if value is None or not str(value).strip():
+        return "not_recorded"
+    text = unicodedata.normalize("NFKD", str(value).strip())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
+    if text == "sim":
+        return "agree"
+    if text == "nao":
+        return "disagree"
+    return "other_not_interpreted"
 
 
 def _offset(row: dict[str, Any], *keys: str) -> int | None:
@@ -282,10 +296,31 @@ def ingest_phase1(
         reviewer_opinions = {
             name: {
                 "agreement_raw": row.get(f"concorda_{name}"),
+                "status": normalize_review_vote(row.get(f"concorda_{name}")),
                 "comment_raw": row.get(f"comentario_{name}"),
             }
             for name in reviewer_keys
         }
+
+        # Any explicit disagreement triggers a *review requirement*; it does
+        # not mean that the correction was accepted or that the label was
+        # rejected. New spans may be stored in a separate source row.
+        disagreement_reviewers = sorted(
+            name for name, opinion in reviewer_opinions.items()
+            if opinion["status"] == "disagree"
+        )
+        changed_fields = sorted(
+            field for field in field_mapping
+            if field_mapping[field] in row
+            and original_fields[field] != revised_fields[field]
+        )
+        if disagreement_reviewers:
+            correction_status = (
+                "revised_fields_differ_pending_verification"
+                if changed_fields else "no_field_change_located"
+            )
+        else:
+            correction_status = "not_triggered_by_explicit_disagreement"
 
         annotation = {
             "annotation_id": record_id,
@@ -306,6 +341,9 @@ def ingest_phase1(
             "field_selection_source": selection_origin,
             "review_state": review_state,
             "reviewer_opinions": reviewer_opinions,
+            "disagreement_reviewers": disagreement_reviewers,
+            "changed_review_fields": changed_fields,
+            "correction_status": correction_status,
             "review_flags": review_flags,
             # Lossless provenance for original, revised and reviewer columns.
             # Output remains local in ignored data/interim (never public Git).
@@ -362,6 +400,9 @@ def ingest_phase1(
             flag for a in annotations for flag in a["review_flags"]
         )),
         "review_state_counts": dict(Counter(a["review_state"] for a in annotations)),
+        "correction_status_counts": dict(Counter(
+            a["correction_status"] for a in annotations
+        )),
         "task_counts": dict(Counter(a["task"] or "UNCLASSIFIED" for a in annotations)),
         "input_encodings": {
             "texts": decoded_texts_as,
