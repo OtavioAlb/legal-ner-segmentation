@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.0.0",
-  "source": "CSS Entidades e segmentações label studio.txt",
+  "schema_version": "1.1.0",
+  "source": "Original Label Studio schema (65 labels), amended by explicit corpus review decision",
   "labels": [
     "ENT_TERMO_IA",
     "ENT_NUMERO_PROCESSO",
@@ -66,6 +66,18 @@
     "SEG_FUNDAMENTO_DECISAO",
     "SEG_EMENTA",
     "SEG_PROVAS",
-    "SEG_PRELIMINARES"
+    "SEG_PRELIMINARES",
+    "SEG_DECISAO_VOTO_VENCEDOR",
+    "SEG_DECISAO_VOTO_VENCIDO"
+  ],
+  "amendments": [
+    {
+      "version": "1.1.0",
+      "origin": "explicit project decision; used also in Phase 2",
+      "added_labels": [
+        "SEG_DECISAO_VOTO_VENCEDOR",
+        "SEG_DECISAO_VOTO_VENCIDO"
+      ]
+    }
   ]
 }
