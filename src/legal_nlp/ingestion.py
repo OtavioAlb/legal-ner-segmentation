@@ -231,6 +231,20 @@ def ingest_phase1(
                 and selected_text is not None
                 and document["text"][start:end] != selected_text):
             errors.append("SPAN_TEXT_MISMATCH")
+        # Non-empty original values must not silently override empty reviewed
+        # values when preparing supervised targets. Keep review signals distinct
+        # from the technical errors reported above.
+        review_flags = []
+        for original_field, revised_field in (
+            ("label", "label_new"),
+            ("start", "start_new"),
+            ("end_exclusive", "end_exclusive_new"),
+            ("span_text", "span_text_new"),
+        ):
+            if revised_field in row and _value(row, revised_field) is None:
+                if _value(row, original_field) is not None:
+                    review_flags.append(f"EMPTY_REVISED_{revised_field.upper()}")
+
         annotation = {
             "annotation_id": record_id,
             "document_id": document["document_id"] if document else None,
@@ -245,6 +259,13 @@ def ingest_phase1(
             "start": start,
             "end": end,
             "span_text_source": selected_text,
+            "review_flags": review_flags,
+            # Lossless provenance for original, revised and reviewer columns.
+            # Output remains local in ignored data/interim (never public Git).
+            "source_fields": {
+                str(key): None if value is None else str(value)
+                for key, value in row.items()
+            },
             "validation_status": "issues_found" if errors else "structurally_valid",
             "issues": errors,
         }
@@ -290,6 +311,9 @@ def ingest_phase1(
         "issues_count": len(issues),
         "document_linkage": matching,
         "annotation_status_counts": dict(Counter(a["validation_status"] for a in annotations)),
+        "review_flag_counts": dict(Counter(
+            flag for a in annotations for flag in a["review_flags"]
+        )),
         "task_counts": dict(Counter(a["task"] or "UNCLASSIFIED" for a in annotations)),
         "input_encodings": {
             "texts": decoded_texts_as,
