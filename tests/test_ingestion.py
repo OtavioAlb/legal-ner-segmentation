@@ -70,3 +70,42 @@ def test_ingestion_is_reproducible(tmp_path):
                      "dataset_manifest.json"]:
         assert (tmp_path / "one" / filename).read_bytes() == (
             tmp_path / "two" / filename).read_bytes()
+
+
+def test_cp1252_csv_with_portuguese_accents(tmp_path):
+    docs = tmp_path / "docs.csv"
+    spans = tmp_path / "spans.csv"
+    labels = tmp_path / "labels.json"
+    aliases = tmp_path / "aliases.json"
+    output = tmp_path / "out"
+
+    docs.write_bytes('id;text\n1;"O acórdão contém perícia."\n'.encode("cp1252"))
+    spans.write_bytes(
+        'id_text;label_new;start_new;end_exclusive_new;span_text_new;annotator\n'
+        '1;ENT_PROVA_PERICIA;16;23;perícia;A\n'.encode("cp1252")
+    )
+    labels.write_text(
+        json.dumps({"schema_version": "1", "labels": ["ENT_PROVA_PERICIA"]}),
+        encoding="utf-8",
+    )
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+
+    manifest = ingest_phase1(docs, spans, output, labels, aliases)
+    assert manifest["input_encodings"] == {
+        "texts": "cp1252",
+        "annotations": "cp1252",
+    }
+    annotations = _jsonl(output / "annotations.jsonl")
+    assert annotations[0]["span_text_source"] == "perícia"
+    assert annotations[0]["validation_status"] == "structurally_valid"
+
+
+def test_encoding_override_is_strict(tmp_path):
+    from pytest import raises
+
+    from legal_nlp.ingestion import _decode_csv
+
+    raw = "ação, perícia, parágrafo".encode("cp1252")
+    assert _decode_csv(raw, "cp1252")[0] == "ação, perícia, parágrafo"
+    with raises(UnicodeDecodeError):
+        _decode_csv(raw, "utf-8")
