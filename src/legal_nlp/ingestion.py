@@ -302,9 +302,9 @@ def ingest_phase1(
             for name in reviewer_keys
         }
 
-        # Any explicit disagreement triggers a *review requirement*; it does
-        # not mean that the correction was accepted or that the label was
-        # rejected. New spans may be stored in a separate source row.
+        # Phase 1 evaluator-corrected fields are the final source of truth.
+        # Disagreement records remain provenance, not a new review gate.
+        # Newly inserted spans can exist in separate original CSV rows.
         disagreement_reviewers = sorted(
             name for name, opinion in reviewer_opinions.items()
             if opinion["status"] == "disagree"
@@ -316,11 +316,11 @@ def ingest_phase1(
         )
         if disagreement_reviewers:
             correction_status = (
-                "revised_fields_differ_pending_verification"
-                if changed_fields else "no_field_change_located"
+                "reviewed_fields_changed_final"
+                if changed_fields else "reviewed_fields_unchanged_final"
             )
         else:
-            correction_status = "not_triggered_by_explicit_disagreement"
+            correction_status = "no_explicit_disagreement"
 
         annotation = {
             "annotation_id": record_id,
