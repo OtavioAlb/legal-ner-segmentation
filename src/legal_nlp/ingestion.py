@@ -10,6 +10,7 @@ import csv
 import hashlib
 import io
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -81,6 +82,19 @@ def _value(row: dict[str, Any], *keys: str) -> str | None:
     return None
 
 
+def normalize_document_id(identifier: str | None) -> str | None:
+    """Normalize spreadsheet artifacts like '290.0' to '290', preserving other IDs.
+
+    Do not coerce arbitrary identifiers to numbers: leading zeros, identifiers
+    with meaningful decimal components, and nonnumeric IDs are preserved.
+    """
+    if identifier is None:
+        return None
+    cleaned = identifier.strip()
+    match = re.fullmatch(r"([0-9]+)\\.0+", cleaned)
+    return match.group(1) if match else cleaned
+
+
 def _offset(row: dict[str, Any], *keys: str) -> int | None:
     value = _value(row, *keys)
     if value is None:
@@ -136,21 +150,32 @@ def ingest_phase1(
 
     documents: list[dict[str, Any]] = []
     document_by_source: dict[str, dict[str, Any]] = {}
+    ambiguous_keys: set[str] = set()
     issues: list[dict[str, Any]] = []
     for index, row in enumerate(texts, start=2):
         source_id = _value(row, "id")
+        normalized_id = normalize_document_id(source_id)
         text = row.get("text") if row.get("text") is not None else row.get("acordao")
         if not source_id or not isinstance(text, str):
             issues.append({"scope": "document", "source_row": index,
                            "code": "INVALID_DOCUMENT"})
             continue
-        if source_id in document_by_source:
-            issues.append({"scope": "document", "source_row": index,
-                           "code": "DUPLICATE_DOCUMENT_ID", "source_id": source_id})
+        if normalized_id in document_by_source or normalized_id in ambiguous_keys:
+            previous = document_by_source.pop(normalized_id, None)
+            ambiguous_keys.add(normalized_id)
+            issues.append({
+                "scope": "document",
+                "source_row": index,
+                "code": "AMBIGUOUS_DOCUMENT_ID",
+                "source_id": source_id,
+                "normalized_source_id": normalized_id,
+                "previous_source_id": previous["source_id"] if previous else None,
+            })
             continue
         document = {
             "document_id": f"phase1:{source_id}",
             "source_id": source_id,
+            "normalized_source_id": normalized_id,
             "idacordao": _value(row, "idacordao"),
             "phase": 1,
             "text": text,
@@ -158,24 +183,28 @@ def ingest_phase1(
             "source_row": index,
         }
         documents.append(document)
-        document_by_source[source_id] = document
+        document_by_source[normalized_id] = document
 
     annotations: list[dict[str, Any]] = []
     for index, row in enumerate(raw_annotations, start=2):
         source_id = _value(row, "id_text")
+        normalized_id = normalize_document_id(source_id)
         original = _value(row, "label_new", "label")
         canonical = aliases.get(original, original) if original else None
         task = ("NER" if canonical and canonical.startswith("ENT_") else
                 "SEG" if canonical and canonical.startswith("SEG_") else None)
         start = _offset(row, "start_new", "start")
         end = _offset(row, "end_exclusive_new", "end")
-        document = document_by_source.get(source_id or "")
+        document = document_by_source.get(normalized_id or "")
         record_id = "phase1:" + _sha256(
             f"{annotations_path.name}:{index}".encode("utf-8")
         )[:20]
         errors: list[str] = []
         if not document:
-            errors.append("UNKNOWN_DOCUMENT")
+            errors.append(
+                "AMBIGUOUS_DOCUMENT_ID"
+                if normalized_id in ambiguous_keys else "UNKNOWN_DOCUMENT"
+            )
         if not original:
             errors.append("MISSING_LABEL")
         elif canonical not in labels:
@@ -194,6 +223,7 @@ def ingest_phase1(
             "annotation_id": record_id,
             "document_id": document["document_id"] if document else None,
             "source_document_id": source_id,
+            "normalized_source_document_id": normalized_id,
             "phase": 1,
             "source_row": index,
             "annotator_id": _value(row, "annotator"),
@@ -208,18 +238,45 @@ def ingest_phase1(
         }
         annotations.append(annotation)
         for code in errors:
-            issues.append({"scope": "annotation", "annotation_id": record_id,
-                           "source_row": index, "code": code})
+            issues.append({
+                "scope": "annotation",
+                "annotation_id": record_id,
+                "source_row": index,
+                "source_document_id": source_id,
+                "normalized_source_document_id": normalized_id,
+                "code": code,
+            })
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(output_dir / "documents.jsonl", documents)
     _write_jsonl(output_dir / "annotations.jsonl", annotations)
     _write_jsonl(output_dir / "validation_issues.jsonl", issues)
+    unmatched = Counter(
+        a["source_document_id"] or "<MISSING>"
+        for a in annotations
+        if "UNKNOWN_DOCUMENT" in a["issues"]
+    )
+    matching = {
+        "matched_annotations": sum(a["document_id"] is not None for a in annotations),
+        "matched_after_normalization": sum(
+            a["document_id"] is not None
+            and a["source_document_id"] != document_by_source[
+                a["normalized_source_document_id"]
+            ]["source_id"]
+            for a in annotations
+        ),
+        "unmatched_annotations": sum(unmatched.values()),
+        "unmatched_source_id_counts": dict(sorted(unmatched.items())),
+        "ambiguous_annotations": sum(
+            "AMBIGUOUS_DOCUMENT_ID" in a["issues"] for a in annotations
+        ),
+    }
     manifest = {
         "schema_version": label_config["schema_version"],
         "phase": 1,
         "document_count": len(documents),
         "annotation_row_count": len(annotations),
         "issues_count": len(issues),
+        "document_linkage": matching,
         "annotation_status_counts": dict(Counter(a["validation_status"] for a in annotations)),
         "task_counts": dict(Counter(a["task"] or "UNCLASSIFIED" for a in annotations)),
         "input_encodings": {
