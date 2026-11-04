@@ -70,3 +70,52 @@ and reported as issues, including original source identifiers.
 
 Matching a document does not imply the annotation is valid: verify offsets,
 text correspondence and label taxonomy after linkage is repaired.
+
+## Review-aware source fields (Phase 1 v0.2)
+
+The authoritative candidate for each field is its reviewed column
+(`label_new`, `start_new`, `end_exclusive_new`, `span_text_new`),
+when that column exists. A present-but-blank reviewed field stays
+`null` in the selected candidate, even if the original has a value.
+
+Each annotation retains:
+
+- `fields_original`: pre-review label, start, end, span text.
+- `fields_revised`: reviewed label, start, end, span text.
+- `field_selection_source`: one provenance key per field.
+- `review_state`: `revised_complete`, `revised_incomplete`,
+  `revised_all_empty`, or `no_complete_review_schema`.
+- `review_flags`: original is populated but revised value is blank.
+- `reviewer_opinions`: all available per-reviewer raw votes and comments.
+- `source_fields`: complete original imported row, including extra columns.
+
+The legacy `label_original` output field names the **selected pre-alias**
+label; the actual pre-review label is `fields_original.label`.
+Likewise, `start`, `end` and `span_text_source` describe the
+selected candidate only.
+
+A reviewed blank is **not** automatically a rejection: it requires
+adjudication before training. Technical validation is separate from
+review status.
+
+## Local review audit
+
+After re-running ingestion, execute:
+
+```powershell
+python -m legal_nlp.audit --dataset data/interim/phase_1 --output data/interim/phase_1/audit --labels configs/labels.json --aliases configs/label_aliases.json
+```
+
+Outputs:
+- `audit_summary.json`: review states, reviewer vote categories, offset
+  reasons, unknown-label frequencies/categories and document candidates.
+- `review_queue.jsonl`: local pending decisions with issue reasons and
+  exact-match candidate document IDs. **No edits** to source annotation IDs.
+- `unknown_labels_review.jsonl`: label candidates only (no automatic mapping).
+
+These reports stay local and are excluded from Git. Some original labels
+contain free text rather than category codes; inspect locally before
+sharing any report externally.
+
+Do not interpret `annotations_without_issues` as the training set size:
+records can be technically valid but unadjudicated.
