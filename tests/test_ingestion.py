@@ -109,3 +109,60 @@ def test_encoding_override_is_strict(tmp_path):
     assert _decode_csv(raw, "cp1252")[0] == "ação, perícia, parágrafo"
     with raises(UnicodeDecodeError):
         _decode_csv(raw, "utf-8")
+
+def test_document_id_normalization_is_conservative():
+    from legal_nlp.ingestion import normalize_document_id
+
+    assert normalize_document_id("290.0") == "290"
+    assert normalize_document_id("290.000") == "290"
+    assert normalize_document_id("00290.0") == "00290"
+    assert normalize_document_id("290.1") == "290.1"
+    assert normalize_document_id("TJ-290") == "TJ-290"
+    assert normalize_document_id(None) is None
+
+
+def test_document_linkage_preserves_unmatched_records(tmp_path):
+    docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
+    labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
+    labels.write_text('{"schema_version":"1","labels":["ENT_RELATOR"]}', encoding="utf-8")
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+    _csv(docs, ["id", "text"], [{"id": "290", "text": "Juiz"}])
+    _csv(spans, ["id_text", "label_new", "start_new", "end_exclusive_new"], [
+        {"id_text": "290.0", "label_new": "ENT_RELATOR", "start_new": "0",
+         "end_exclusive_new": "4"},
+        {"id_text": "999.0", "label_new": "ENT_RELATOR", "start_new": "0",
+         "end_exclusive_new": "4"},
+    ])
+    out = tmp_path / "out"
+    manifest = ingest_phase1(docs, spans, out, labels, aliases)
+    assert manifest["document_linkage"]["matched_annotations"] == 1
+    assert manifest["document_linkage"]["matched_after_normalization"] == 1
+    assert manifest["document_linkage"]["unmatched_annotations"] == 1
+    assert manifest["document_linkage"]["unmatched_source_id_counts"] == {"999.0": 1}
+    rows = _jsonl(out / "annotations.jsonl")
+    assert rows[0]["document_id"] == "phase1:290"
+    assert rows[0]["source_document_id"] == "290.0"
+    assert rows[0]["issues"] == []
+    assert rows[1]["document_id"] is None
+    assert "UNKNOWN_DOCUMENT" in rows[1]["issues"]
+
+
+def test_ambiguous_normalized_identifiers_are_not_joined(tmp_path):
+    docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
+    labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
+    labels.write_text('{"schema_version":"1","labels":["ENT_RELATOR"]}', encoding="utf-8")
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+    _csv(docs, ["id", "text"], [
+        {"id": "290", "text": "Juiz"},
+        {"id": "290.0", "text": "Juiz"},
+    ])
+    _csv(spans, ["id_text", "label_new", "start_new", "end_exclusive_new"], [
+        {"id_text": "290.0", "label_new": "ENT_RELATOR",
+         "start_new": "0", "end_exclusive_new": "4"}
+    ])
+    out = tmp_path / "out"
+    manifest = ingest_phase1(docs, spans, out, labels, aliases)
+    assert manifest["document_linkage"]["matched_annotations"] == 0
+    assert manifest["document_linkage"]["ambiguous_annotations"] == 1
+    rows = _jsonl(out / "annotations.jsonl")
+    assert "AMBIGUOUS_DOCUMENT_ID" in rows[0]["issues"]
