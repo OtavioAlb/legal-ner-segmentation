@@ -113,3 +113,44 @@ def test_disagreement_is_queued_even_when_span_is_structurally_valid(tmp_path):
     queued = json.loads((tmp_path / "audit" / "review_queue.jsonl").read_text())
     assert queued["correction_status"] == "reviewed_fields_changed_final"
     assert queued["resolution_status"] == "final_reviewed_annotation"
+
+
+def test_final_supervised_view_uses_corrected_fields_and_does_not_gate_on_disagreement(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "documents.jsonl").write_text(
+        json.dumps({"document_id": "phase1:1", "text": "ABCD"}) + "\n",
+        encoding="utf-8",
+    )
+    rows = [
+        {
+            "annotation_id": "accepted", "source_row": 2,
+            "document_id": "phase1:1", "label_canonical": "SEG_EMENTA",
+            "annotator_id": "A", "task": "SEG", "start": 0, "end": 4,
+            "review_state": "revised_complete", "issues": [], "review_flags": [],
+            "disagreement_reviewers": ["B"], "correction_status": "reviewed_fields_changed_final",
+        },
+        {
+            "annotation_id": "excluded", "source_row": 3,
+            "document_id": "phase1:1", "label_canonical": None,
+            "annotator_id": "A", "task": None, "start": None, "end": None,
+            "review_state": "revised_all_empty",
+            "issues": ["MISSING_LABEL", "INVALID_OFFSETS"], "review_flags": [],
+            "disagreement_reviewers": [], "correction_status": "no_explicit_disagreement",
+        },
+    ]
+    (source / "annotations.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+    output = tmp_path / "audit"
+    report = audit_phase1(source, output)
+    accepted = [json.loads(x) for x in (
+        output / "supervised_annotations.jsonl").read_text(encoding="utf-8").splitlines()]
+    excluded = [json.loads(x) for x in (
+        output / "supervised_exclusions.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert report["supervised_annotation_count"] == 1
+    assert report["supervised_excluded_count"] == 1
+    assert accepted[0]["annotation_id"] == "accepted"
+    assert accepted[0]["label"] == "SEG_EMENTA"
+    assert excluded[0]["annotation_id"] == "excluded"
+    assert "REVIEWED_FIELDS_INCOMPLETE" in excluded[0]["reasons"]
