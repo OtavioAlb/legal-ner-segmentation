@@ -215,9 +215,10 @@ def ingest_phase1(
     for index, row in enumerate(raw_annotations, start=2):
         source_id = _value(row, "id_text")
         normalized_id = normalize_document_id(source_id)
-        # The reviewed columns, when present, are authoritative for the
-        # reviewed candidate. An empty reviewed value is NOT replaced by its
-        # original counterpart: deletion or rejection must be adjudicated.
+        # Preserve original and evaluator-corrected values independently.
+        # A blank correction does not imply rejection: explicit positive
+        # reviewer votes may validate the original, but conflicting or
+        # negative votes without a correction never authorize fallback.
         original_fields = {
             "label": _value(row, "label"),
             "start": _offset(row, "start"),
@@ -237,14 +238,68 @@ def ingest_phase1(
             "end": "end_exclusive_new",
             "span_text": "span_text_new",
         }
-        selected_fields = {
-            key: revised_fields[key] if field_mapping[key] in row else original_fields[key]
-            for key in field_mapping
+        reviewer_keys = sorted(
+            name[len("concorda_"):]
+            for name in row if name.startswith("concorda_")
+        )
+        reviewer_opinions = {
+            name: {
+                "agreement_raw": row.get(f"concorda_{name}"),
+                "status": normalize_review_vote(row.get(f"concorda_{name}")),
+                "comment_raw": row.get(f"comentario_{name}"),
+            }
+            for name in reviewer_keys
         }
-        selection_origin = {
-            key: "revised" if field_mapping[key] in row else "original_unreviewed"
-            for key in field_mapping
-        }
+        agree_count = sum(
+            opinion["status"] == "agree" for opinion in reviewer_opinions.values()
+        )
+        disagree_count = sum(
+            opinion["status"] == "disagree" for opinion in reviewer_opinions.values()
+        )
+        all_revised_present = all(field_mapping[key] in row for key in field_mapping)
+        revised_complete = (
+            all_revised_present and all(value is not None for value in revised_fields.values())
+        )
+        revised_all_empty = (
+            all_revised_present and all(value is None for value in revised_fields.values())
+        )
+        original_has_target = (
+            original_fields["label"] is not None
+            and original_fields["start"] is not None
+            and original_fields["end"] is not None
+        )
+        if revised_complete:
+            # Final evaluator correction, irrespective of earlier disagreement.
+            target_selection_status = "reviewed_final"
+            selected_fields = dict(revised_fields)
+            selection_origin = {key: "revised" for key in field_mapping}
+        elif revised_all_empty and agree_count > 0 and disagree_count == 0:
+            if original_has_target:
+                # An explicit SIM confirms the original when no reviewer said NAO.
+                target_selection_status = "original_confirmed_by_reviewers"
+                selected_fields = dict(original_fields)
+                selection_origin = {key: "original_confirmed" for key in field_mapping}
+            else:
+                target_selection_status = "confirmed_original_missing_target"
+                selected_fields = dict(revised_fields)
+                selection_origin = {key: "revised_blank" for key in field_mapping}
+        else:
+            selected_fields = {
+                key: revised_fields[key] if field_mapping[key] in row else original_fields[key]
+                for key in field_mapping
+            }
+            selection_origin = {
+                key: "revised" if field_mapping[key] in row else "original_unreviewed"
+                for key in field_mapping
+            }
+            if revised_all_empty and agree_count and disagree_count:
+                target_selection_status = "conflicting_votes_without_correction"
+            elif revised_all_empty and disagree_count:
+                target_selection_status = "disagreement_without_correction"
+            elif revised_all_empty:
+                target_selection_status = "no_evaluation_no_correction"
+            else:
+                target_selection_status = "incomplete_reviewed_fields"
         original = selected_fields["label"]
         canonical = aliases.get(original, original) if original else None
         task = ("NER" if canonical and canonical.startswith("ENT_") else
@@ -289,18 +344,6 @@ def ingest_phase1(
                 review_state = "revised_incomplete"
         else:
             review_state = "no_complete_review_schema"
-        reviewer_keys = sorted(
-            name[len("concorda_"):]
-            for name in row if name.startswith("concorda_")
-        )
-        reviewer_opinions = {
-            name: {
-                "agreement_raw": row.get(f"concorda_{name}"),
-                "status": normalize_review_vote(row.get(f"concorda_{name}")),
-                "comment_raw": row.get(f"comentario_{name}"),
-            }
-            for name in reviewer_keys
-        }
 
         # Phase 1 evaluator-corrected fields are the final source of truth.
         # Disagreement records remain provenance, not a new review gate.
@@ -339,6 +382,9 @@ def ingest_phase1(
             "fields_original": original_fields,
             "fields_revised": revised_fields,
             "field_selection_source": selection_origin,
+            "target_selection_status": target_selection_status,
+            "review_agree_count": agree_count,
+            "review_disagree_count": disagree_count,
             "review_state": review_state,
             "reviewer_opinions": reviewer_opinions,
             "disagreement_reviewers": disagreement_reviewers,
@@ -400,6 +446,9 @@ def ingest_phase1(
             flag for a in annotations for flag in a["review_flags"]
         )),
         "review_state_counts": dict(Counter(a["review_state"] for a in annotations)),
+        "target_selection_status_counts": dict(Counter(
+            a["target_selection_status"] for a in annotations
+        )),
         "correction_status_counts": dict(Counter(
             a["correction_status"] for a in annotations
         )),
