@@ -227,3 +227,49 @@ $report = Get-Content data/interim/phase_1/audit/audit_summary.json -Raw |
 $report | Select-Object supervised_annotation_count, supervised_excluded_count
 $report.unknown_label_counts | Format-Table
 ```
+
+## Confirmed-original recovery / conflict exclusion (Phase 1)
+
+**Updated rule:** `concorda_* = SIM` explicitly confirms the original
+`label`, `start`, and `end_exclusive` when the evaluator has not entered
+a correction. Consequently, **empty reviewed columns do not by themselves
+mean the annotation was rejected**.
+
+Selection hierarchy per source annotation:
+
+1. All four reviewed fields populated: use evaluator-corrected values
+   (`target_selection_status=reviewed_final`), including records previously
+   marked `NÃO`. Technical validation still applies.
+2. All four reviewed fields empty, at least one explicit `SIM`, and **no**
+   explicit `NÃO`: use the original fields
+   (`target_selection_status=original_confirmed_by_reviewers`), provided
+   original target fields exist and validation succeeds.
+3. All four reviewed fields empty with both `SIM` and `NÃO`:
+   `conflicting_votes_without_correction`; exclude from supervision.
+4. All four reviewed fields empty with `NÃO` and no `SIM`:
+   `disagreement_without_correction`; exclude.
+5. All four reviewed fields empty with no recorded evaluations:
+   `no_evaluation_no_correction`; exclude.
+6. Incomplete reviewed values (neither all present nor all empty):
+   `incomplete_reviewed_fields`; exclude conservatively; do not
+   create a hybrid original/revised annotation.
+
+The selected values always undergo document, label, offset and text-integrity
+validation. For accepted originals, `field_selection_source` records
+`original_confirmed`, and the supervised view records
+`source_of_truth=original_confirmed_by_reviewers`.
+
+The diagnostic audit records `target_selection_status_counts` and
+`NO_VALIDATED_TARGET_SELECTION` for ineligible records. **No LLM adjudication
+or new human review** is run. Raw rows, reviews and original values remain
+unchanged. Contradictory evaluations without a complete corrected annotation
+are treated as errors for the consolidated training data.
+
+For the user's prior breakdown of 141 all-blank rows, five had only positive
+recorded votes and are candidates for re-entry, subject to technical validation.
+The other 136 lacked an unambiguous original confirmation under this rule.
+Numbers must be recalculated after re-ingestion.
+
+**This section supersedes earlier blanket statements** that every blank
+reviewed field is excluded or that only fully populated reviewed rows can
+be part of the supervised view.
