@@ -121,6 +121,9 @@ def audit_phase1(
     explicit_disagreements = 0
     queue: list[dict[str, Any]] = []
     label_rows: dict[str, dict[str, Any]] = {}
+    accepted: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    exclusion_reason_counts = Counter()
 
     for ann in anns:
         codes = ann.get("issues") or []
@@ -148,7 +151,7 @@ def audit_phase1(
                     "label_original": label,
                     "category": proposal["category"],
                     "proposed_target": proposal["candidate"],
-                    "decision": "pending_manual_review",
+                    "decision": "not_mapped_excluded_from_supervised_view",
                 }
 
         document_id = ann.get("document_id")
@@ -178,7 +181,41 @@ def audit_phase1(
                     ]
             orphan_candidate_counts[len(matching_ids)] += 1
 
-        if codes or review_flags or disagreement_reviewers or ann.get("review_state") in {
+        # Final Phase 1 view: evaluators' reviewed values have authority.
+        # Keep only complete, structurally valid annotations with known labels.
+        # A disagreement does not block a valid reviewed annotation.
+        exclusion_reasons = list(codes)
+        if ann.get("review_state") != "revised_complete":
+            exclusion_reasons.append("REVIEWED_FIELDS_INCOMPLETE")
+        if ann.get("document_id") not in doc_by_id:
+            exclusion_reasons.append("UNRESOLVED_DOCUMENT")
+        if ann.get("label_canonical") is None:
+            exclusion_reasons.append("UNRESOLVED_CANONICAL_LABEL")
+        if not isinstance(ann.get("start"), int) or not isinstance(ann.get("end"), int):
+            exclusion_reasons.append("MISSING_SPAN_BOUNDS")
+        if exclusion_reasons:
+            unique_reasons = sorted(set(exclusion_reasons))
+            exclusion_reason_counts.update(unique_reasons)
+            excluded.append({
+                "annotation_id": ann["annotation_id"],
+                "source_row": ann["source_row"],
+                "reasons": unique_reasons,
+                "final_status": "excluded_from_supervised_view",
+            })
+        else:
+            accepted.append({
+                "annotation_id": ann["annotation_id"],
+                "document_id": ann["document_id"],
+                "source_row": ann["source_row"],
+                "annotator_id": ann.get("annotator_id"),
+                "task": ann.get("task"),
+                "label": ann["label_canonical"],
+                "start": ann["start"],
+                "end": ann["end"],
+                "source_of_truth": "evaluator_reviewed_fields",
+            })
+
+        if codes or review_flags or ann.get("review_state") in {
             "revised_incomplete", "revised_all_empty", "no_complete_review_schema"
         }:
             queue.append({
@@ -199,7 +236,8 @@ def audit_phase1(
                 "candidate_document_ids": matching_ids,
                 "candidate_count": len(matching_ids)
                 if "UNKNOWN_DOCUMENT" in codes or "AMBIGUOUS_DOCUMENT_ID" in codes else None,
-                "adjudication_status": "pending_manual_review",
+                "resolution_status": "technical_exception" if exclusion_reasons else "final_reviewed_annotation",
+                "adjudication_required": False,
             })
 
     for label, entry in label_rows.items():
@@ -211,6 +249,9 @@ def audit_phase1(
         output_dir / "unknown_labels_review.jsonl",
         sorted(label_rows.values(), key=lambda item: (-item["count"], item["label_original"])),
     )
+
+    _write_jsonl(output_dir / "supervised_annotations.jsonl", accepted)
+    _write_jsonl(output_dir / "supervised_exclusions.jsonl", excluded)
 
     report = {
         "document_count": len(docs),
@@ -238,8 +279,11 @@ def audit_phase1(
         "unknown_document_candidate_counts": {
             str(count): total for count, total in sorted(orphan_candidate_counts.items())
         },
-        "manual_review_queue_count": len(queue),
-        "method": "diagnostic suggestions only; review fields are authoritative without fallback",
+        "diagnostic_queue_count": len(queue),
+        "supervised_annotation_count": len(accepted),
+        "supervised_excluded_count": len(excluded),
+        "supervised_exclusion_reason_counts": dict(sorted(exclusion_reason_counts.items())),
+        "method": "final evaluator reviewed fields; conservative technical exclusion without manual adjudication",
     }
     (output_dir / "audit_summary.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
