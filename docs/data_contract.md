@@ -199,3 +199,31 @@ or token-label encoding. Those transformations are separate later stages.
 
 The older terminology `pending_manual_review` and `manual_review_queue_count`
 has been superseded. No further manual adjudication is required.
+
+## Audit JSON compatibility (v1.1.0)
+
+The `audit_summary.json` field `unknown_label_counts` is a **list of
+records** rather than a map keyed by source label:
+
+```json
+"unknown_label_counts": [
+  {"label": "SIM", "count": 1},
+  {"label": "sim", "count": 1}
+]
+```
+
+This preserves source case exactly and is compatible with Windows PowerShell
+`ConvertFrom-Json`, which otherwise reports duplicate keys for `SIM`
+and `sim`. `audit_schema_version` tracks this output-contract change;
+the input `schema_version` and taxonomy are unchanged.
+
+After pulling, re-run **only** `python -m legal_nlp.audit` if
+`annotations.jsonl` was produced with the current importer's field schema.
+In Windows PowerShell:
+
+```powershell
+$report = Get-Content data/interim/phase_1/audit/audit_summary.json -Raw |
+    ConvertFrom-Json
+$report | Select-Object supervised_annotation_count, supervised_excluded_count
+$report.unknown_label_counts | Format-Table
+```
