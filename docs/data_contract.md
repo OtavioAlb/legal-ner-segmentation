@@ -119,3 +119,49 @@ sharing any report externally.
 
 Do not interpret `annotations_without_issues` as the training set size:
 records can be technically valid but unadjudicated.
+
+## Segmentation taxonomy v1.1.0
+
+The authoritative taxonomy now contains **67 labels (54 ENT and 13 SEG)**.
+In addition to the 11 segmentation labels in the original Label Studio file,
+`SEG_DECISAO_VOTO_VENCEDOR` and `SEG_DECISAO_VOTO_VENCIDO` are canonical,
+based on explicit project confirmation. Both also belong to Phase 2.
+They are distinct from `ENT_DECISAO_VOTO_VENCEDOR` and
+`ENT_DECISAO_VOTO_VENCIDO`.
+
+No other semantic label migration is approved by this change.
+
+## Review protocol: evaluation coverage and correction tracking
+
+The review design assigns reviewers to other annotators. Therefore only
+**explicitly filled** `concorda_*` cells represent review observations.
+Empty review cells mean **no assessment recorded**, not agreement, rejection,
+or disagreement. Do not compute majority voting over all seven reviewers.
+
+Vote interpretation:
+- `SIM` (including case/whitespace variants) → `agree`
+- `NÃO` / `NAO` (including case/whitespace variants) → `disagree`
+- empty → `not_recorded`
+- other cell contents → `other_not_interpreted` pending verification
+
+Each `reviewer_opinions` entry contains `status`,
+`agreement_raw` and `comment_raw`.
+
+**Explicit disagreement requires examination of a correction:** the reviewer
+may have corrected the label/entity/segment, changed offsets, or introduced a
+separate annotation. `changed_review_fields` lists differences between
+original and revised values (label, start, end, span_text).
+`correction_status` distinguishes:
+
+- `revised_fields_differ_pending_verification`: differences exist; this
+  alone does not prove that the correction satisfies the reviewers.
+- `no_field_change_located`: disagreement without a difference in these
+  fields; inspect comments and possible new annotation rows.
+- `not_triggered_by_explicit_disagreement`: no explicit disagreement;
+  this does **not** prove that the record was reviewed or approved.
+
+The audit includes all explicitly disputed annotations in
+`review_queue.jsonl`, even if no technical validation error exists. It
+does not automatically link new annotations to disagreement records.
+
+All records and reviewer comments remain in ignored local datasets.
