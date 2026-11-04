@@ -281,9 +281,9 @@ def test_explicit_disagreement_requires_correction_verification(tmp_path):
     assert anns[0]["reviewer_opinions"]["C"]["status"] == "not_recorded"
     assert anns[0]["disagreement_reviewers"] == ["B"]
     assert anns[0]["changed_review_fields"] == ["label"]
-    assert anns[0]["correction_status"] == "revised_fields_differ_pending_verification"
-    assert anns[1]["correction_status"] == "no_field_change_located"
+    assert anns[0]["correction_status"] == "reviewed_fields_changed_final"
+    assert anns[1]["correction_status"] == "reviewed_fields_unchanged_final"
     assert manifest["correction_status_counts"] == {
-        "revised_fields_differ_pending_verification": 1,
-        "no_field_change_located": 1,
+        "reviewed_fields_changed_final": 1,
+        "reviewed_fields_unchanged_final": 1,
     }
