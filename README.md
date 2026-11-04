@@ -37,3 +37,24 @@ The importer outputs `documents.jsonl`, `annotations.jsonl`, `validation_issues.
 ## Development
 
 Feature branches and pull requests are used for review. No merge into `main` without explicit authorization.
+
+## Phase 1 audit (local)
+
+After importing the private data, run:
+
+```powershell
+python -m legal_nlp.audit --dataset data/interim/phase_1 --output data/interim/phase_1/audit
+Get-Content data/interim/phase_1/audit/audit_summary.json
+```
+
+The audit produces `audit_summary.json` and `review_queue.jsonl`.
+It counts unknown labels, invalid offsets, unresolved document references and
+text mismatches. For unlinked records, it proposes document candidates **only
+when both the span text and its original character offsets match exactly**.
+Candidates are not assigned automatically. The review queue contains
+identifiers and diagnostics; no judicial text or full excerpts are included.
+
+The importer also retains all original/review columns in the **local**
+`annotations.jsonl`, and adds `review_flags` for original fields whose
+reviewed counterparts are blank. These flags do not imply rejected annotations.
+An adjudication protocol is required before generating supervised targets.
