@@ -192,3 +192,46 @@ def test_unknown_labels_that_differ_only_by_case_are_preserved(tmp_path):
         {"label": "sim", "count": 1},
     ]
     assert report["supervised_excluded_count"] == 2
+
+
+def test_audit_accepts_confirmed_original_and_excludes_conflicting_votes(tmp_path):
+    source = tmp_path / "dataset"
+    source.mkdir()
+    (source / "documents.jsonl").write_text(
+        json.dumps({"document_id": "phase1:1", "text": "Juiz"}) + "\n",
+        encoding="utf-8",
+    )
+    accepted = {
+        "annotation_id": "confirmed", "source_row": 23, "document_id": "phase1:1",
+        "label_original": "ENT_RELATOR", "label_canonical": "ENT_RELATOR",
+        "task": "NER", "start": 0, "end": 4, "span_text_source": "Juiz",
+        "review_state": "revised_all_empty",
+        "target_selection_status": "original_confirmed_by_reviewers",
+        "issues": [], "review_flags": [], "disagreement_reviewers": [],
+    }
+    conflict = {
+        **accepted,
+        "annotation_id": "conflict", "source_row": 946,
+        "target_selection_status": "conflicting_votes_without_correction",
+        "label_original": None, "label_canonical": None,
+        "start": None, "end": None,
+        "issues": ["MISSING_LABEL", "INVALID_OFFSETS"],
+        "disagreement_reviewers": ["B"],
+    }
+    (source / "annotations.jsonl").write_text(
+        json.dumps(accepted) + "\n" + json.dumps(conflict) + "\n",
+        encoding="utf-8",
+    )
+    report = audit_phase1(source, tmp_path / "audit")
+    assert report["supervised_annotation_count"] == 1
+    assert report["supervised_excluded_count"] == 1
+    assert report["target_selection_status_counts"] == {
+        "conflicting_votes_without_correction": 1,
+        "original_confirmed_by_reviewers": 1,
+    }
+    final = json.loads((tmp_path / "audit" / "supervised_annotations.jsonl").read_text())
+    assert final["annotation_id"] == "confirmed"
+    assert final["source_of_truth"] == "original_confirmed_by_reviewers"
+    exclusion = json.loads((tmp_path / "audit" / "supervised_exclusions.jsonl").read_text())
+    assert exclusion["annotation_id"] == "conflict"
+    assert "NO_VALIDATED_TARGET_SELECTION" in exclusion["reasons"]
