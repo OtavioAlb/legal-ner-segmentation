@@ -50,3 +50,23 @@ override detection. All decoding is strict (no replacement characters).
 If an input is incorrectly decoded but remains valid text, inspect the
 source file and override its encoding rather than modifying the original.
 Text is never normalized; offsets remain relative to the decoded source.
+
+## Phase 1 document identifiers
+
+CSV exports sometimes encode integer document IDs as decimal strings (for
+example, `290.0` in annotations and `290` in the documents file).
+The importer normalizes only unsigned integer identifiers ending in a
+decimal point followed exclusively by zeros. The original ID and the
+normalized ID are both retained in the output.
+
+The normalizer **does not** discard leading zeros or coerce arbitrary IDs to
+floating point. A normalized key that maps to more than one source document
+is marked ambiguous rather than silently assigned to one document.
+
+`dataset_manifest.json` now includes `document_linkage`, with counts of
+matched annotations, links requiring normalization, unmatched IDs and
+ambiguous IDs. Missing associations are preserved in `annotations.jsonl`
+and reported as issues, including original source identifiers.
+
+Matching a document does not imply the annotation is valid: verify offsets,
+text correspondence and label taxonomy after linkage is repaired.
