@@ -236,7 +236,7 @@ def test_original_reviewed_values_and_reviewer_opinions_remain_separate(tmp_path
     assert ann["review_state"] == "revised_all_empty"
     assert len(ann["review_flags"]) == 4
     assert ann["reviewer_opinions"]["Emily"] == {
-        "agreement_raw": "NÃO", "comment_raw": "Revisar"
+        "agreement_raw": "NÃO", "status": "disagree", "comment_raw": "Revisar"
     }
     assert manifest["review_state_counts"] == {"revised_all_empty": 1}
 
