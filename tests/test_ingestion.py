@@ -239,3 +239,51 @@ def test_original_reviewed_values_and_reviewer_opinions_remain_separate(tmp_path
         "agreement_raw": "NÃO", "comment_raw": "Revisar"
     }
     assert manifest["review_state_counts"] == {"revised_all_empty": 1}
+
+
+def test_explicit_disagreement_requires_correction_verification(tmp_path):
+    from legal_nlp.ingestion import normalize_review_vote
+
+    assert normalize_review_vote("NÃO ") == "disagree"
+    assert normalize_review_vote("NAO") == "disagree"
+    assert normalize_review_vote("sim") == "agree"
+    assert normalize_review_vote(" ") == "not_recorded"
+    assert normalize_review_vote(None) == "not_recorded"
+    assert normalize_review_vote("corrigir texto") == "other_not_interpreted"
+
+    docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
+    labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
+    labels.write_text('{"schema_version":"1","labels":["SEG_EMENTA","SEG_RELATORIO"]}', encoding="utf-8")
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+    _csv(docs, ["id", "text"], [{"id": "290", "text": "Juiz"}])
+    columns = [
+        "id_text", "label", "label_new", "start", "start_new",
+        "end_exclusive", "end_exclusive_new", "span_text", "span_text_new",
+        "concorda_A", "concorda_B", "concorda_C",
+    ]
+    base = {
+        "id_text": "290.0", "label": "SEG_EMENTA",
+        "start": "0", "start_new": "0", "end_exclusive": "4",
+        "end_exclusive_new": "4", "span_text": "Juiz", "span_text_new": "Juiz",
+        "concorda_A": "SIM", "concorda_B": "NÃO", "concorda_C": "",
+    }
+    rows = [
+        {**base, "label_new": "SEG_RELATORIO"},
+        {**base, "label_new": "SEG_EMENTA"},
+    ]
+    _csv(spans, columns, rows)
+    output = tmp_path / "out"
+    manifest = ingest_phase1(docs, spans, output, labels, aliases)
+    anns = _jsonl(output / "annotations.jsonl")
+
+    assert anns[0]["reviewer_opinions"]["A"]["status"] == "agree"
+    assert anns[0]["reviewer_opinions"]["B"]["status"] == "disagree"
+    assert anns[0]["reviewer_opinions"]["C"]["status"] == "not_recorded"
+    assert anns[0]["disagreement_reviewers"] == ["B"]
+    assert anns[0]["changed_review_fields"] == ["label"]
+    assert anns[0]["correction_status"] == "revised_fields_differ_pending_verification"
+    assert anns[1]["correction_status"] == "no_field_change_located"
+    assert manifest["correction_status_counts"] == {
+        "revised_fields_differ_pending_verification": 1,
+        "no_field_change_located": 1,
+    }
