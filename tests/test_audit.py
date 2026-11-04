@@ -31,3 +31,49 @@ def test_audit_local_review_queue(tmp_path):
     queue = json.loads((tmp_path / "output" / "review_queue.jsonl").read_text())
     assert queue["candidate_document_ids"] == ["phase1:1"]
     assert queue["document_id"] is None
+
+
+def test_label_proposals_are_not_applied():
+    from legal_nlp.audit import _propose_label
+    known = {"ENT_NORMA_DECRETO", "SEG_FUNDAMENTO_DECISAO"}
+    assert _propose_label("ENT_NORM_DECRETO", known, {}) == {
+        "category": "possible_lexical_alias", "candidate": "ENT_NORMA_DECRETO"
+    }
+    assert _propose_label("SEG_DECISAO_VOTO_VENCEDOR", known, {}) == {
+        "category": "legacy_segmentation_class", "candidate": None
+    }
+    assert _propose_label("ENT_JUR_DECISAO", known, {}) == {
+        "category": "legacy_entity_class", "candidate": None
+    }
+    assert _propose_label("SIM", known, {})["category"] == "not_structured_label"
+
+
+def test_audit_classifies_reviews_and_blank_offsets(tmp_path):
+    source = tmp_path / "data"
+    source.mkdir()
+    document = {"document_id": "phase1:1", "text": "Legal text"}
+    annotation = {
+        "annotation_id": "a1", "source_row": 2, "document_id": "phase1:1",
+        "source_document_id": "1", "label_original": None,
+        "task": None, "start": None, "end": None, "span_text_source": None,
+        "review_state": "revised_all_empty",
+        "review_flags": ["EMPTY_REVISED_LABEL_NEW", "EMPTY_REVISED_START_NEW"],
+        "reviewer_opinions": {
+            "Alice": {"agreement_raw": "NÃO", "comment_raw": "review"},
+            "Bob": {"agreement_raw": "SIM", "comment_raw": ""},
+        },
+        "issues": ["MISSING_LABEL", "INVALID_OFFSETS"],
+    }
+    (source / "documents.jsonl").write_text(
+        json.dumps(document) + "\n", encoding="utf-8"
+    )
+    (source / "annotations.jsonl").write_text(
+        json.dumps(annotation, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    report = audit_phase1(source, tmp_path / "audit")
+    assert report["review_state_counts"]["revised_all_empty"] == 1
+    assert report["invalid_offset_reason_counts"]["missing_or_noninteger_start"] == 1
+    assert report["reviewer_agreement_counts"]["Alice"]["disagree"] == 1
+    assert report["reviewer_agreement_counts"]["Bob"]["agree"] == 1
+    assert report["manual_review_queue_count"] == 1
+    assert (tmp_path / "audit" / "unknown_labels_review.jsonl").exists()
