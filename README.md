@@ -54,7 +54,14 @@ when both the span text and its original character offsets match exactly**.
 Candidates are not assigned automatically. The review queue contains
 identifiers and diagnostics; no judicial text or full excerpts are included.
 
-The importer also retains all original/review columns in the **local**
-`annotations.jsonl`, and adds `review_flags` for original fields whose
-reviewed counterparts are blank. These flags do not imply rejected annotations.
-An adjudication protocol is required before generating supervised targets.
+The importer retains all original/review columns in the **local**
+`annotations.jsonl`, with `fields_original`, `fields_revised`, individual
+reviewer opinions, `review_state` and `review_flags`. A present but empty
+reviewed field **does not fall back** to the original value. These flags do not
+imply rejected annotations. An adjudication protocol is required before
+creating supervised targets.
+
+After pulling the latest branch, **rerun ingestion before running the audit**:
+old `annotations.jsonl` files do not contain the new review provenance fields.
+The audit also writes `unknown_labels_review.jsonl` with manual taxonomy
+proposals. See [the legacy analysis](docs/legacy_preprocessing_audit.md).
