@@ -287,3 +287,70 @@ def test_explicit_disagreement_requires_correction_verification(tmp_path):
         "reviewed_fields_changed_final": 1,
         "reviewed_fields_unchanged_final": 1,
     }
+
+
+def test_empty_revision_with_only_positive_votes_restores_original(tmp_path):
+    docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
+    labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
+    labels.write_text('{"schema_version":"1","labels":["ENT_RELATOR"]}', encoding="utf-8")
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+    _csv(docs, ["id", "text"], [{"id": "101", "text": "Juiz"}])
+    _csv(spans, [
+        "id_text", "label", "start", "end_exclusive", "span_text",
+        "label_new", "start_new", "end_exclusive_new", "span_text_new",
+        "concorda_A", "concorda_B", "concorda_C",
+    ], [{
+        "id_text": "101", "label": "ENT_RELATOR", "start": "0",
+        "end_exclusive": "4", "span_text": "Juiz", "label_new": "",
+        "start_new": "", "end_exclusive_new": "", "span_text_new": "",
+        "concorda_A": "SIM", "concorda_B": "sim", "concorda_C": "",
+    }])
+    out = tmp_path / "out"
+    manifest = ingest_phase1(docs, spans, out, labels, aliases)
+    ann = _jsonl(out / "annotations.jsonl")[0]
+    assert ann["review_state"] == "revised_all_empty"
+    assert ann["target_selection_status"] == "original_confirmed_by_reviewers"
+    assert ann["review_agree_count"] == 2
+    assert ann["review_disagree_count"] == 0
+    assert ann["label_canonical"] == "ENT_RELATOR"
+    assert (ann["start"], ann["end"], ann["span_text_source"]) == (0, 4, "Juiz")
+    assert ann["issues"] == []
+    assert ann["field_selection_source"]["label"] == "original_confirmed"
+    assert manifest["target_selection_status_counts"] == {
+        "original_confirmed_by_reviewers": 1
+    }
+
+
+def test_empty_revision_conflicting_or_negative_votes_not_restored(tmp_path):
+    docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
+    labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
+    labels.write_text('{"schema_version":"1","labels":["ENT_RELATOR"]}', encoding="utf-8")
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+    _csv(docs, ["id", "text"], [{"id": "101", "text": "Juiz"}])
+    columns = [
+        "id_text", "label", "start", "end_exclusive", "span_text",
+        "label_new", "start_new", "end_exclusive_new", "span_text_new",
+        "concorda_A", "concorda_B",
+    ]
+    base = {
+        "id_text": "101", "label": "ENT_RELATOR", "start": "0",
+        "end_exclusive": "4", "span_text": "Juiz", "label_new": "",
+        "start_new": "", "end_exclusive_new": "", "span_text_new": "",
+    }
+    rows = [
+        {**base, "concorda_A": "SIM", "concorda_B": "NÃO"},
+        {**base, "concorda_A": "", "concorda_B": "NÃO"},
+        {**base, "concorda_A": "", "concorda_B": ""},
+    ]
+    _csv(spans, columns, rows)
+    out = tmp_path / "out"
+    ingest_phase1(docs, spans, out, labels, aliases)
+    anns = _jsonl(out / "annotations.jsonl")
+    assert [a["target_selection_status"] for a in anns] == [
+        "conflicting_votes_without_correction",
+        "disagreement_without_correction",
+        "no_evaluation_no_correction",
+    ]
+    assert all(a["label_canonical"] is None for a in anns)
+    assert all("MISSING_LABEL" in a["issues"] for a in anns)
+    assert all(a["fields_original"]["label"] == "ENT_RELATOR" for a in anns)
