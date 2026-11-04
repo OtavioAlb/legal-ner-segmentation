@@ -82,6 +82,18 @@ def _value(row: dict[str, Any], *keys: str) -> str | None:
     return None
 
 
+def _raw_span_text(row: dict[str, Any], *keys: str) -> str | None:
+    """Read an annotated excerpt without stripping meaningful whitespace."""
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = value if isinstance(value, str) else str(value)
+        if text and text.strip().lower() not in {"nan", "none", "null"}:
+            return text
+    return None
+
+
 def normalize_document_id(identifier: str | None) -> str | None:
     """Normalize spreadsheet artifacts like '290.0' to '290', preserving other IDs.
 
@@ -213,7 +225,7 @@ def ingest_phase1(
             errors.append("INVALID_OFFSETS")
         elif document and end > len(document["text"]):
             errors.append("END_OUT_OF_BOUNDS")
-        selected_text = _value(row, "span_text_new", "span_text")
+        selected_text = _raw_span_text(row, "span_text_new", "span_text")
         if (document and start is not None and end is not None
                 and 0 <= start < end <= len(document["text"])
                 and selected_text is not None
