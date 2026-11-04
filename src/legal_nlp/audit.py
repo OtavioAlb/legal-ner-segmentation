@@ -117,6 +117,8 @@ def audit_phase1(
     unknown_labels, mismatch_types, offsets = Counter(), Counter(), Counter()
     reviewer_opinions: dict[str, Counter] = {}
     orphan_candidate_counts = Counter()
+    correction_counts = Counter()
+    explicit_disagreements = 0
     queue: list[dict[str, Any]] = []
     label_rows: dict[str, dict[str, Any]] = {}
 
@@ -126,6 +128,11 @@ def audit_phase1(
         issues.update(codes)
         flags.update(review_flags)
         reviews[ann.get("review_state") or "not_recorded"] += 1
+        disagreement_reviewers = ann.get("disagreement_reviewers") or []
+        correction_status = ann.get("correction_status") or "not_recorded"
+        correction_counts[correction_status] += 1
+        if disagreement_reviewers:
+            explicit_disagreements += 1
         for reviewer, opinion in (ann.get("reviewer_opinions") or {}).items():
             reviewer_opinions.setdefault(reviewer, Counter())[
                 _agreement_status((opinion or {}).get("agreement_raw"))
@@ -171,7 +178,7 @@ def audit_phase1(
                     ]
             orphan_candidate_counts[len(matching_ids)] += 1
 
-        if codes or review_flags or ann.get("review_state") in {
+        if codes or review_flags or disagreement_reviewers or ann.get("review_state") in {
             "revised_incomplete", "revised_all_empty", "no_complete_review_schema"
         }:
             queue.append({
@@ -184,6 +191,9 @@ def audit_phase1(
                 "issues": codes,
                 "review_flags": review_flags,
                 "review_state": ann.get("review_state"),
+                "disagreement_reviewers": disagreement_reviewers,
+                "changed_review_fields": ann.get("changed_review_fields") or [],
+                "correction_status": correction_status,
                 "mismatch_type": mismatch_kind,
                 "offset_reason": offset_reason,
                 "candidate_document_ids": matching_ids,
@@ -210,6 +220,8 @@ def audit_phase1(
         "review_state_counts": dict(sorted(reviews.items())),
         "issue_counts": dict(sorted(issues.items())),
         "review_flag_counts": dict(sorted(flags.items())),
+        "annotations_with_explicit_disagreement": explicit_disagreements,
+        "correction_status_counts": dict(sorted(correction_counts.items())),
         "reviewer_agreement_counts": {
             reviewer: dict(sorted(counts.items()))
             for reviewer, counts in sorted(reviewer_opinions.items())
