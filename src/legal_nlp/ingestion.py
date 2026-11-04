@@ -5,8 +5,10 @@ deduplication, span trimming, or overlap removal is performed.
 """
 from __future__ import annotations
 
+import codecs
 import csv
 import hashlib
+import io
 import json
 from collections import Counter
 from pathlib import Path
@@ -17,7 +19,29 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _load_rows(path: Path) -> list[dict[str, Any]]:
+def _decode_csv(payload: bytes, encoding: str = "auto") -> tuple[str, str]:
+    """Decode CSV strictly; record the encoding used for reproducibility.
+
+    Automatic detection prefers UTF-8 and then legacy Windows/Latin-1 encodings.
+    The fallback is not definitive detection; use an explicit encoding if needed.
+    """
+    if encoding != "auto":
+        return payload.decode(encoding, errors="strict"), encoding
+
+    if payload.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return payload.decode("utf-16", errors="strict"), "utf-16"
+
+    for candidate in ("utf-8-sig", "cp1252", "iso-8859-1"):
+        try:
+            return payload.decode(candidate, errors="strict"), candidate
+        except UnicodeDecodeError:
+            continue
+    raise UnicodeError("Could not decode the CSV with supported encodings")
+
+
+def _load_rows(
+    path: Path, encoding: str = "auto"
+) -> tuple[list[dict[str, Any]], str]:
     if path.suffix.lower() == ".xlsx":
         try:
             from openpyxl import load_workbook
@@ -29,12 +53,13 @@ def _load_rows(path: Path) -> list[dict[str, Any]]:
             rows = sheet.iter_rows(values_only=True)
             header = next(rows)
             names = [str(v).strip() if v is not None else "" for v in header]
-            return [dict(zip(names, values)) for values in rows]
+            return [dict(zip(names, values)) for values in rows], "xlsx"
         finally:
             workbook.close()
     if path.suffix.lower() != ".csv":
         raise ValueError(f"Unsupported input: {path.suffix}")
-    with path.open("r", encoding="utf-8-sig", newline="") as stream:
+    content, used_encoding = _decode_csv(path.read_bytes(), encoding)
+    with io.StringIO(content, newline="") as stream:
         sample = stream.read(8192)
         stream.seek(0)
         try:
@@ -42,7 +67,7 @@ def _load_rows(path: Path) -> list[dict[str, Any]]:
             delim = dialect.delimiter
         except csv.Error:
             delim = ","
-        return list(csv.DictReader(stream, delimiter=delim))
+        return list(csv.DictReader(stream, delimiter=delim)), used_encoding
 
 
 def _value(row: dict[str, Any], *keys: str) -> str | None:
@@ -79,6 +104,8 @@ def ingest_phase1(
     output_dir: str | Path,
     labels_path: str | Path,
     aliases_path: str | Path,
+    texts_encoding: str = "auto",
+    annotations_encoding: str = "auto",
 ) -> dict[str, Any]:
     """Import Phase 1 into canonical documents, per-annotator annotations and issues.
 
@@ -95,8 +122,10 @@ def ingest_phase1(
     aliases = alias_config["aliases"]
     if not all(target in labels for target in aliases.values()):
         raise ValueError("Aliases contain unknown target labels")
-    texts = _load_rows(texts_path)
-    raw_annotations = _load_rows(annotations_path)
+    texts, decoded_texts_as = _load_rows(texts_path, texts_encoding)
+    raw_annotations, decoded_annotations_as = _load_rows(
+        annotations_path, annotations_encoding
+    )
     if texts and not ({"id", "text"} <= set(texts[0]) or
                       {"id", "acordao"} <= set(texts[0])):
         raise ValueError("Documents must include id and text/acordao")
@@ -193,6 +222,10 @@ def ingest_phase1(
         "issues_count": len(issues),
         "annotation_status_counts": dict(Counter(a["validation_status"] for a in annotations)),
         "task_counts": dict(Counter(a["task"] or "UNCLASSIFIED" for a in annotations)),
+        "input_encodings": {
+            "texts": decoded_texts_as,
+            "annotations": decoded_annotations_as,
+        },
         "input_sha256": {
             "texts": _sha256(texts_path.read_bytes()),
             "annotations": _sha256(annotations_path.read_bytes()),
