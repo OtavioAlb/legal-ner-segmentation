@@ -79,7 +79,7 @@ def test_audit_classifies_reviews_and_blank_offsets(tmp_path):
     assert (tmp_path / "audit" / "unknown_labels_review.jsonl").exists()
 
 
-def test_disagreement_is_queued_even_when_span_is_structurally_valid(tmp_path):
+def test_disagreement_does_not_block_final_valid_corrected_span(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
     (source / "documents.jsonl").write_text(
@@ -107,12 +107,19 @@ def test_disagreement_is_queued_even_when_span_is_structurally_valid(tmp_path):
     result = audit_phase1(source, tmp_path / "audit")
     assert result["annotations_without_issues"] == 1
     assert result["annotations_with_explicit_disagreement"] == 1
-    assert result["diagnostic_queue_count"] == 1
+    # Final evaluator corrections are not blocked by prior disagreement.
+    assert result["diagnostic_queue_count"] == 0
+    assert result["supervised_annotation_count"] == 1
+    assert result["supervised_excluded_count"] == 0
     assert result["reviewer_agreement_counts"]["R1"]["not_recorded"] == 1
     assert result["reviewer_agreement_counts"]["R2"]["disagree"] == 1
-    queued = json.loads((tmp_path / "audit" / "review_queue.jsonl").read_text())
-    assert queued["correction_status"] == "reviewed_fields_changed_final"
-    assert queued["resolution_status"] == "final_reviewed_annotation"
+    assert (tmp_path / "audit" / "review_queue.jsonl").read_text() == ""
+    final_rows = (tmp_path / "audit" / "supervised_annotations.jsonl").read_text().splitlines()
+    assert len(final_rows) == 1
+    reviewed = json.loads(final_rows[0])
+    assert reviewed["annotation_id"] == "review1"
+    assert reviewed["label"] == "SEG_EMENTA"
+    assert reviewed["source_of_truth"] == "evaluator_reviewed_fields"
 
 
 def test_final_supervised_view_uses_corrected_fields_and_does_not_gate_on_disagreement(tmp_path):
