@@ -12,8 +12,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from .ingestion import normalize_document_id
-
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     with path.open(encoding="utf-8") as handle:
