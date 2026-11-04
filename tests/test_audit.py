@@ -161,3 +161,34 @@ def test_final_supervised_view_uses_corrected_fields_and_does_not_gate_on_disagr
     assert accepted[0]["label"] == "SEG_EMENTA"
     assert excluded[0]["annotation_id"] == "excluded"
     assert "REVIEWED_FIELDS_INCOMPLETE" in excluded[0]["reasons"]
+
+
+def test_unknown_labels_that_differ_only_by_case_are_preserved(tmp_path):
+    source = tmp_path / "dataset"
+    source.mkdir()
+    (source / "documents.jsonl").write_text(
+        json.dumps({"document_id": "phase1:1", "text": "text"}) + "\n",
+        encoding="utf-8",
+    )
+    rows = []
+    for index, label in enumerate(("SIM", "sim"), start=1):
+        rows.append({
+            "annotation_id": f"a{index}", "source_row": index + 1,
+            "document_id": "phase1:1", "source_document_id": "1",
+            "label_original": label, "label_canonical": None, "task": None,
+            "start": 0, "end": 4, "span_text_source": "text",
+            "issues": ["UNKNOWN_LABEL"], "review_flags": [],
+            "review_state": "revised_complete",
+        })
+    (source / "annotations.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+    output = tmp_path / "audit"
+    audit_phase1(source, output)
+    report = json.loads((output / "audit_summary.json").read_text(encoding="utf-8"))
+    assert report["audit_schema_version"] == "1.1.0"
+    assert report["unknown_label_counts"] == [
+        {"label": "SIM", "count": 1},
+        {"label": "sim", "count": 1},
+    ]
+    assert report["supervised_excluded_count"] == 2
