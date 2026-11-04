@@ -187,7 +187,7 @@ def test_span_text_whitespace_is_preserved(tmp_path):
     assert manifest["annotation_status_counts"] == {"structurally_valid": 1}
 
 
-def test_missing_revised_span_falls_back_to_original(tmp_path):
+def test_missing_revised_span_is_not_resurrected(tmp_path):
     docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
     labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
     labels.write_text('{"schema_version":"1","labels":["ENT_RELATOR"]}', encoding="utf-8")
@@ -201,5 +201,41 @@ def test_missing_revised_span_falls_back_to_original(tmp_path):
     out = tmp_path / "out"
     ingest_phase1(docs, spans, out, labels, aliases)
     rows = _jsonl(out / "annotations.jsonl")
-    assert rows[0]["span_text_source"] == " Juiz "
+    assert rows[0]["span_text_source"] is None
+    assert rows[0]["fields_original"]["span_text"] == " Juiz "
+    assert rows[0]["fields_revised"]["span_text"] is None
+    assert rows[0]["review_state"] == "revised_incomplete"
+    assert "EMPTY_REVISED_SPAN_TEXT_NEW" in rows[0]["review_flags"]
     assert rows[0]["issues"] == []
+
+
+def test_original_reviewed_values_and_reviewer_opinions_remain_separate(tmp_path):
+    docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
+    labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
+    labels.write_text('{"schema_version":"1","labels":["ENT_RELATOR"]}', encoding="utf-8")
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+    _csv(docs, ["id", "text"], [{"id": "290", "text": "Juiz"}])
+    _csv(spans, ["id_text", "label", "label_new", "start", "start_new",
+                 "end_exclusive", "end_exclusive_new", "span_text", "span_text_new",
+                 "concorda_Emily", "comentario_Emily"], [{
+        "id_text": "290.0", "label": "ENT_RELATOR", "label_new": "",
+        "start": "0", "start_new": "", "end_exclusive": "4",
+        "end_exclusive_new": "", "span_text": "Juiz", "span_text_new": "",
+        "concorda_Emily": "NÃO", "comentario_Emily": "Revisar",
+    }])
+    out = tmp_path / "out"
+    manifest = ingest_phase1(docs, spans, out, labels, aliases)
+    ann = _jsonl(out / "annotations.jsonl")[0]
+    assert ann["fields_original"]["label"] == "ENT_RELATOR"
+    assert ann["fields_revised"]["label"] is None
+    assert ann["label_original"] is None
+    assert ann["label_canonical"] is None
+    assert ann["start"] is None and ann["end"] is None
+    assert "MISSING_LABEL" in ann["issues"]
+    assert "INVALID_OFFSETS" in ann["issues"]
+    assert ann["review_state"] == "revised_all_empty"
+    assert len(ann["review_flags"]) == 4
+    assert ann["reviewer_opinions"]["Emily"] == {
+        "agreement_raw": "NÃO", "comment_raw": "Revisar"
+    }
+    assert manifest["review_state_counts"] == {"revised_all_empty": 1}
