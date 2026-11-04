@@ -89,7 +89,7 @@ def test_disagreement_is_queued_even_when_span_is_structurally_valid(tmp_path):
     ann = {
         "annotation_id": "review1", "source_row": 9,
         "document_id": "phase1:1", "source_document_id": "1",
-        "label_original": "SEG_EMENTA", "task": "SEG", "start": 0,
+        "label_original": "SEG_EMENTA", "label_canonical": "SEG_EMENTA", "task": "SEG", "start": 0,
         "end": 5, "span_text_source": "Legal",
         "review_state": "revised_complete",
         "review_flags": [], "issues": [],
