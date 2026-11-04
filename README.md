@@ -65,3 +65,17 @@ After pulling the latest branch, **rerun ingestion before running the audit**:
 old `annotations.jsonl` files do not contain the new review provenance fields.
 The audit also writes `unknown_labels_review.jsonl` with manual taxonomy
 proposals. See [the legacy analysis](docs/legacy_preprocessing_audit.md).
+
+## Confirmed taxonomy and evaluation protocol
+
+The canonical label schema (configs/labels.json v1.1.0) has **54 ENT + 13 SEG**
+labels. The two decision-vote segmentation categories are retained across
+Phase 1 and Phase 2.
+
+Evaluation coverage varies by original annotator. A blank `concorda_*` cell
+means that reviewer did **not record an evaluation**; it cannot be counted as
+agreement or disagreement. Any explicit disagreement requires verification of
+the revised label or span boundaries, or of a new annotation recorded elsewhere.
+The audit tracks `disagreement_reviewers`, `changed_review_fields`, and
+`correction_status` and queues disputes even when the span is technically
+valid. No changes are auto-approved or deleted.
