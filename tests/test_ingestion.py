@@ -82,7 +82,7 @@ def test_cp1252_csv_with_portuguese_accents(tmp_path):
     docs.write_bytes('id;text\n1;"O acórdão contém perícia."\n'.encode("cp1252"))
     spans.write_bytes(
         'id_text;label_new;start_new;end_exclusive_new;span_text_new;annotator\n'
-        '1;ENT_PROVA_PERICIA;16;23;perícia;A\n'.encode("cp1252")
+        '1;ENT_PROVA_PERICIA;17;24;perícia;A\n'.encode("cp1252")
     )
     labels.write_text(
         json.dumps({"schema_version": "1", "labels": ["ENT_PROVA_PERICIA"]}),
