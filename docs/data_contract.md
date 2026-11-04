@@ -165,3 +165,37 @@ The audit includes all explicitly disputed annotations in
 does not automatically link new annotations to disagreement records.
 
 All records and reviewer comments remain in ignored local datasets.
+
+## Phase 1 final evaluator corrections (supersedes previous adjudication gate)
+
+**Final policy confirmed by the project owner:** the values in `label_new`,
+`start_new`, `end_exclusive_new` and `span_text_new` are the evaluator-corrected
+source of truth. No further human adjudication will be performed for Phase 1.
+An explicit disagreement does not veto a complete, technically valid corrected
+annotation; unchanged revised values are also used as delivered.
+
+Empty revised fields are never silently replaced by original values. Records
+with incomplete revised fields, unknown labels, unresolved document identity,
+invalid offsets or mismatching excerpts are **conservatively excluded from the
+supervised view**, while all 5,295 source rows remain preserved in
+`annotations.jsonl`. Exclusion is a technical selection decision, not a claim
+that the evaluator rejected the original span. Only deterministic and verifiable
+remediation can change technical eligibility.
+
+After re-ingestion and audit, the local files include:
+- `audit/supervised_annotations.jsonl`: complete validated corrected spans
+  with canonical label, document, offsets, task and original annotation ID.
+- `audit/supervised_exclusions.jsonl`: every excluded source annotation and
+  its explicit reasons (no data deleted).
+- `audit/review_queue.jsonl`: **diagnostic exceptions**, not a human
+  adjudication queue; `resolution_status` distinguishes records usable in
+  the final reviewed view from technical exceptions.
+- `audit/audit_summary.json`: `supervised_annotation_count`,
+  `supervised_excluded_count` and reason counts.
+
+The supervised view is **not yet a model-ready NER/SEG dataset**: it has not
+resolved cross-annotator duplicates, overlapping spans, document-grouped splits
+or token-label encoding. Those transformations are separate later stages.
+
+The older terminology `pending_manual_review` and `manual_review_queue_count`
+has been superseded. No further manual adjudication is required.
