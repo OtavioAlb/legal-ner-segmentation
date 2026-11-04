@@ -201,12 +201,42 @@ def ingest_phase1(
     for index, row in enumerate(raw_annotations, start=2):
         source_id = _value(row, "id_text")
         normalized_id = normalize_document_id(source_id)
-        original = _value(row, "label_new", "label")
+        # The reviewed columns, when present, are authoritative for the
+        # reviewed candidate. An empty reviewed value is NOT replaced by its
+        # original counterpart: deletion or rejection must be adjudicated.
+        original_fields = {
+            "label": _value(row, "label"),
+            "start": _offset(row, "start"),
+            "end": _offset(row, "end_exclusive"),
+            "span_text": _raw_span_text(row, "span_text"),
+        }
+        revised_fields = {
+            "label": _value(row, "label_new") if "label_new" in row else None,
+            "start": _offset(row, "start_new") if "start_new" in row else None,
+            "end": _offset(row, "end_exclusive_new") if "end_exclusive_new" in row else None,
+            "span_text": _raw_span_text(row, "span_text_new")
+            if "span_text_new" in row else None,
+        }
+        field_mapping = {
+            "label": "label_new",
+            "start": "start_new",
+            "end": "end_exclusive_new",
+            "span_text": "span_text_new",
+        }
+        selected_fields = {
+            key: revised_fields[key] if field_mapping[key] in row else original_fields[key]
+            for key in field_mapping
+        }
+        selection_origin = {
+            key: "revised" if field_mapping[key] in row else "original_unreviewed"
+            for key in field_mapping
+        }
+        original = selected_fields["label"]
         canonical = aliases.get(original, original) if original else None
         task = ("NER" if canonical and canonical.startswith("ENT_") else
                 "SEG" if canonical and canonical.startswith("SEG_") else None)
-        start = _offset(row, "start_new", "start")
-        end = _offset(row, "end_exclusive_new", "end")
+        start = selected_fields["start"]
+        end = selected_fields["end"]
         document = document_by_source.get(normalized_id or "")
         record_id = "phase1:" + _sha256(
             f"{annotations_path.name}:{index}".encode("utf-8")
@@ -225,25 +255,37 @@ def ingest_phase1(
             errors.append("INVALID_OFFSETS")
         elif document and end > len(document["text"]):
             errors.append("END_OUT_OF_BOUNDS")
-        selected_text = _raw_span_text(row, "span_text_new", "span_text")
+        selected_text = selected_fields["span_text"]
         if (document and start is not None and end is not None
                 and 0 <= start < end <= len(document["text"])
                 and selected_text is not None
                 and document["text"][start:end] != selected_text):
             errors.append("SPAN_TEXT_MISMATCH")
-        # Non-empty original values must not silently override empty reviewed
-        # values when preparing supervised targets. Keep review signals distinct
-        # from the technical errors reported above.
         review_flags = []
-        for original_field, revised_field in (
-            ("label", "label_new"),
-            ("start", "start_new"),
-            ("end_exclusive", "end_exclusive_new"),
-            ("span_text", "span_text_new"),
-        ):
-            if revised_field in row and _value(row, revised_field) is None:
-                if _value(row, original_field) is not None:
-                    review_flags.append(f"EMPTY_REVISED_{revised_field.upper()}")
+        for field, revised_name in field_mapping.items():
+            if revised_name in row and revised_fields[field] is None:
+                if original_fields[field] is not None:
+                    review_flags.append(f"EMPTY_REVISED_{revised_name.upper()}")
+        if all(field_mapping[key] in row for key in field_mapping):
+            if all(revised_fields[key] is not None for key in field_mapping):
+                review_state = "revised_complete"
+            elif all(revised_fields[key] is None for key in field_mapping):
+                review_state = "revised_all_empty"
+            else:
+                review_state = "revised_incomplete"
+        else:
+            review_state = "no_complete_review_schema"
+        reviewer_keys = sorted(
+            name[len("concorda_"):]
+            for name in row if name.startswith("concorda_")
+        )
+        reviewer_opinions = {
+            name: {
+                "agreement_raw": row.get(f"concorda_{name}"),
+                "comment_raw": row.get(f"comentario_{name}"),
+            }
+            for name in reviewer_keys
+        }
 
         annotation = {
             "annotation_id": record_id,
@@ -259,6 +301,11 @@ def ingest_phase1(
             "start": start,
             "end": end,
             "span_text_source": selected_text,
+            "fields_original": original_fields,
+            "fields_revised": revised_fields,
+            "field_selection_source": selection_origin,
+            "review_state": review_state,
+            "reviewer_opinions": reviewer_opinions,
             "review_flags": review_flags,
             # Lossless provenance for original, revised and reviewer columns.
             # Output remains local in ignored data/interim (never public Git).
@@ -314,6 +361,7 @@ def ingest_phase1(
         "review_flag_counts": dict(Counter(
             flag for a in annotations for flag in a["review_flags"]
         )),
+        "review_state_counts": dict(Counter(a["review_state"] for a in annotations)),
         "task_counts": dict(Counter(a["task"] or "UNCLASSIFIED" for a in annotations)),
         "input_encodings": {
             "texts": decoded_texts_as,
