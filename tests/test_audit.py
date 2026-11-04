@@ -160,7 +160,9 @@ def test_final_supervised_view_uses_corrected_fields_and_does_not_gate_on_disagr
     assert accepted[0]["annotation_id"] == "accepted"
     assert accepted[0]["label"] == "SEG_EMENTA"
     assert excluded[0]["annotation_id"] == "excluded"
-    assert "REVIEWED_FIELDS_INCOMPLETE" in excluded[0]["reasons"]
+    assert "NO_VALIDATED_TARGET_SELECTION" in excluded[0]["reasons"]
+    assert "MISSING_LABEL" in excluded[0]["reasons"]
+    assert "INVALID_OFFSETS" in excluded[0]["reasons"]
 
 
 def test_unknown_labels_that_differ_only_by_case_are_preserved(tmp_path):
