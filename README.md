@@ -56,10 +56,11 @@ identifiers and diagnostics; no judicial text or full excerpts are included.
 
 The importer retains all original/review columns in the **local**
 `annotations.jsonl`, with `fields_original`, `fields_revised`, individual
-reviewer opinions, `review_state` and `review_flags`. A present but empty
-reviewed field **does not fall back** to the original value. These flags do not
-imply rejected annotations. An adjudication protocol is required before
-creating supervised targets.
+reviewer opinions, `review_state` and `review_flags`. When all reviewed fields are empty, the original is used **only if** at
+least one reviewer explicitly said `SIM` and nobody said `NÃO`; conflicts
+or absent votes are not imputed. A complete evaluator correction is always
+authoritative, and incomplete corrections are not mixed with originals. No
+additional human adjudication or LLM resolution is used.
 
 After pulling the latest branch, **rerun ingestion before running the audit**:
 old `annotations.jsonl` files do not contain the new review provenance fields.
@@ -74,8 +75,8 @@ Phase 1 and Phase 2.
 
 Evaluation coverage varies by original annotator. A blank `concorda_*` cell
 means that reviewer did **not record an evaluation**; it cannot be counted as
-agreement or disagreement. Any explicit disagreement remains available for provenance, but the
-evaluator-corrected values are final for Phase 1; no additional human
-adjudication is required. The audit excludes incomplete or technically invalid
+agreement or disagreement. Disagreements remain available for provenance, and complete
+evaluator-corrected values are final for Phase 1. Conflicting reviews without
+a complete correction are excluded from the supervised view. The audit excludes incomplete or technically invalid
 records conservatively and preserves every original row. No original data
 are deleted.
