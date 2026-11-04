@@ -166,3 +166,40 @@ def test_ambiguous_normalized_identifiers_are_not_joined(tmp_path):
     assert manifest["document_linkage"]["ambiguous_annotations"] == 1
     rows = _jsonl(out / "annotations.jsonl")
     assert "AMBIGUOUS_DOCUMENT_ID" in rows[0]["issues"]
+
+
+def test_span_text_whitespace_is_preserved(tmp_path):
+    docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
+    labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
+    labels.write_text('{"schema_version":"1","labels":["ENT_RELATOR"]}', encoding="utf-8")
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+    _csv(docs, ["id", "text"], [{"id": "290", "text": " Juiz "}])
+    _csv(spans, ["id_text", "label_new", "start_new", "end_exclusive_new",
+                 "span_text_new"], [
+        {"id_text": "290.0", "label_new": "ENT_RELATOR", "start_new": "0",
+         "end_exclusive_new": "6", "span_text_new": " Juiz "}
+    ])
+    out = tmp_path / "out"
+    manifest = ingest_phase1(docs, spans, out, labels, aliases)
+    rows = _jsonl(out / "annotations.jsonl")
+    assert rows[0]["span_text_source"] == " Juiz "
+    assert rows[0]["issues"] == []
+    assert manifest["annotation_status_counts"] == {"structurally_valid": 1}
+
+
+def test_missing_revised_span_falls_back_to_original(tmp_path):
+    docs, spans = tmp_path / "docs.csv", tmp_path / "spans.csv"
+    labels, aliases = tmp_path / "labels.json", tmp_path / "aliases.json"
+    labels.write_text('{"schema_version":"1","labels":["ENT_RELATOR"]}', encoding="utf-8")
+    aliases.write_text('{"aliases":{}}', encoding="utf-8")
+    _csv(docs, ["id", "text"], [{"id": "290", "text": " Juiz "}])
+    _csv(spans, ["id_text", "label_new", "start_new", "end_exclusive_new",
+                 "span_text_new", "span_text"], [
+        {"id_text": "290.0", "label_new": "ENT_RELATOR", "start_new": "0",
+         "end_exclusive_new": "6", "span_text_new": "", "span_text": " Juiz "}
+    ])
+    out = tmp_path / "out"
+    ingest_phase1(docs, spans, out, labels, aliases)
+    rows = _jsonl(out / "annotations.jsonl")
+    assert rows[0]["span_text_source"] == " Juiz "
+    assert rows[0]["issues"] == []
