@@ -254,6 +254,7 @@ def audit_phase1(
     _write_jsonl(output_dir / "supervised_exclusions.jsonl", excluded)
 
     report = {
+        "audit_schema_version": "1.1.0",
         "document_count": len(docs),
         "annotation_count": len(anns),
         "annotations_without_issues": sum(not ann.get("issues") for ann in anns),
@@ -267,7 +268,15 @@ def audit_phase1(
             reviewer: dict(sorted(counts.items()))
             for reviewer, counts in sorted(reviewer_opinions.items())
         },
-        "unknown_label_counts": dict(sorted(unknown_labels.items())),
+        # Use records rather than dynamic label keys: PowerShell's
+        # ConvertFrom-Json is case-insensitive for object keys in Windows
+        # PowerShell, and the raw source contains distinct "SIM" and "sim".
+        "unknown_label_counts": [
+            {"label": label, "count": count}
+            for label, count in sorted(
+                unknown_labels.items(), key=lambda item: (-item[1], item[0])
+            )
+        ],
         "unknown_label_category_counts": dict(sorted(
             Counter(
                 entry["category"] for entry in label_rows.values()
