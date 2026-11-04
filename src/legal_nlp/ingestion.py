@@ -91,7 +91,7 @@ def normalize_document_id(identifier: str | None) -> str | None:
     if identifier is None:
         return None
     cleaned = identifier.strip()
-    match = re.fullmatch(r"([0-9]+)\\.0+", cleaned)
+    match = re.fullmatch(r"([0-9]+)\.0+", cleaned)
     return match.group(1) if match else cleaned
 
 
