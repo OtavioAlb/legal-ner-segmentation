@@ -124,6 +124,7 @@ def audit_phase1(
     accepted: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     exclusion_reason_counts = Counter()
+    selection_status_counts = Counter()
 
     for ann in anns:
         codes = ann.get("issues") or []
@@ -131,6 +132,8 @@ def audit_phase1(
         issues.update(codes)
         flags.update(review_flags)
         reviews[ann.get("review_state") or "not_recorded"] += 1
+        selection_status = ann.get("target_selection_status") or "not_recorded"
+        selection_status_counts[selection_status] += 1
         disagreement_reviewers = ann.get("disagreement_reviewers") or []
         correction_status = ann.get("correction_status") or "not_recorded"
         correction_counts[correction_status] += 1
@@ -185,8 +188,16 @@ def audit_phase1(
         # Keep only complete, structurally valid annotations with known labels.
         # A disagreement does not block a valid reviewed annotation.
         exclusion_reasons = list(codes)
-        if ann.get("review_state") != "revised_complete":
-            exclusion_reasons.append("REVIEWED_FIELDS_INCOMPLETE")
+        eligible_selection = selection_status in {
+            "reviewed_final", "original_confirmed_by_reviewers"
+        }
+        # Older JSONLs predate selection provenance: a fully reviewed record
+        # remains eligible for backward compatibility. Regenerate ingestion
+        # to apply the new SIM-only recovery rule.
+        if selection_status == "not_recorded":
+            eligible_selection = ann.get("review_state") == "revised_complete"
+        if not eligible_selection:
+            exclusion_reasons.append("NO_VALIDATED_TARGET_SELECTION")
         if ann.get("document_id") not in doc_by_id:
             exclusion_reasons.append("UNRESOLVED_DOCUMENT")
         if ann.get("label_canonical") is None:
@@ -212,12 +223,14 @@ def audit_phase1(
                 "label": ann["label_canonical"],
                 "start": ann["start"],
                 "end": ann["end"],
-                "source_of_truth": "evaluator_reviewed_fields",
+                "source_of_truth": (
+                    "original_confirmed_by_reviewers"
+                    if selection_status == "original_confirmed_by_reviewers"
+                    else "evaluator_reviewed_fields"
+                ),
             })
 
-        if codes or review_flags or ann.get("review_state") in {
-            "revised_incomplete", "revised_all_empty", "no_complete_review_schema"
-        }:
+        if exclusion_reasons:
             queue.append({
                 "annotation_id": ann["annotation_id"],
                 "source_row": ann["source_row"],
@@ -260,6 +273,7 @@ def audit_phase1(
         "annotations_without_issues": sum(not ann.get("issues") for ann in anns),
         "annotations_with_issues": sum(bool(ann.get("issues")) for ann in anns),
         "review_state_counts": dict(sorted(reviews.items())),
+        "target_selection_status_counts": dict(sorted(selection_status_counts.items())),
         "issue_counts": dict(sorted(issues.items())),
         "review_flag_counts": dict(sorted(flags.items())),
         "annotations_with_explicit_disagreement": explicit_disagreements,
