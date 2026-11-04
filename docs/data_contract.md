@@ -37,3 +37,16 @@ silently trimmed or corrected. Rows with empty labels remain in the output.
 - Preparation of NER and segmentation supervised datasets.
 
 **No real judicial text or annotations should be committed to public Git.**
+
+## CSV encodings
+
+The importer reads CSV files as UTF-8 (including BOM) when possible. If UTF-8
+decoding fails, it attempts Windows-1252 and then ISO-8859-1. This is a
+best-effort fallback, **not a definitive encoding detector**. Each input's
+selected encoding is recorded in `dataset_manifest.json`.
+
+Use `--annotations-encoding cp1252` (or `--texts-encoding cp1252`) to
+override detection. All decoding is strict (no replacement characters).
+If an input is incorrectly decoded but remains valid text, inspect the
+source file and override its encoding rather than modifying the original.
+Text is never normalized; offsets remain relative to the decoded source.
