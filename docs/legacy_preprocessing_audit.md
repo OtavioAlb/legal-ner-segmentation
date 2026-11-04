@@ -1,3 +1,10 @@
+> **Política posterior (04/11/2026):** a Fase 1 NÃO terá nova adjudicação humana.
+> Os campos corrigidos pelos avaliadores são definitivos. Os itens listados
+> abaixo como "pendentes de autorização" são apenas históricos e foram
+> substituídos pelo contrato em `docs/data_contract.md`. A exclusão de linhas
+> incompletas da visão supervisionada é uma checagem técnica conservadora,
+> não uma inferência de rejeição pelo avaliador.
+
 # Auditoria do pré-processamento legado e política da Fase 1
 
 Status: diagnóstico e proposta de implementação; **não define o gold standard**.
