@@ -375,3 +375,31 @@ Command: python -m legal_nlp.span_diagnostics --boundary-tolerance 10
 Existing overlap counts remain descriptive, never error counts. The summary
 now includes boundary_candidate_pairs and a per-task category breakdown.
 No supervised annotations, offsets or raw inputs are changed.
+
+## Explicit evaluator labels and near-boundary different-label candidates
+
+Use src/legal_nlp/reviewer_priority.py to inspect different-label
+near-boundary candidate pairs against the original ingestion provenance.
+The evaluator's final corrected label always supersedes that same source
+annotation's original label. A `reviewed_final` value is not itself proof
+of a CHANGED label; compare fields_original.label with fields_revised.label.
+
+Run:
+
+    python -m legal_nlp.reviewer_priority --annotations data/interim/phase_1/annotations.jsonl --candidates data/interim/phase_1/span_diagnostics/near_boundary_candidates.jsonl --output data/interim/phase_1/reviewer_priority
+
+Outputs:
+- different_label_review_evidence.jsonl: one row per different-label
+  candidate pair, with original and evaluator-revised label, source row,
+  reviewer status and correction evidence for each source annotation.
+- review_priority_summary.json: counts by task, boundary category, and
+  whether one, both, or neither side has an explicit label change.
+
+If a candidate spans two INDEPENDENT final annotations, even a change
+on only one side does not automatically invalidate the other annotation.
+Different labels and nearly identical offsets can be valid multilabel spans.
+Both stay in sanitized supervision. The tool records the provenance and
+priority evidence but DOES NOT discard spans, infer reviewer intent,
+vote between annotators, or apply BIO conversion.
+
+Do not interpret the 76 different-label candidate pairs as 76 errors.
