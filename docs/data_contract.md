@@ -323,3 +323,28 @@ This view is **not** the model-ready gold set: duplicate labels across
 annotators, overlaps, document-grouped evaluation folds and token alignment
 are subsequent explicit phases. No actual TJSP text or source data is
 committed to the public repository.
+
+
+## Post-sanitization span diagnostics (read-only)
+
+After successful sanitization, execute:
+
+    python -m legal_nlp.span_diagnostics --input data/interim/phase_1/sanitized/sanitized_annotations.jsonl --output data/interim/phase_1/span_diagnostics
+
+Outputs (all local, no private judicial text in Git):
+
+- exact_duplicate_groups.jsonl: document+task+offset+label groups with
+  multiple annotation records, original row numbers and annotator IDs.
+- same_span_label_conflicts.jsonl: identical document/task/start/end
+  boundaries assigned distinct labels, with separate source-row evidence.
+- within_task_overlap_pairs.jsonl: unique labeled spans with intersecting
+  intervals, classified as nested or crossing; pairs are reported once,
+  independent of duplicate annotation multiplicity.
+- span_diagnostics_summary.json: per-task and overall counts.
+
+NER and SEG are analyzed **separately**. Cross-task nesting (e.g., an
+entity inside an argumentative segment) is expected and is not an error.
+These are diagnostic candidate conflicts, not automatically invalid spans.
+The tool neither drops duplicate annotations nor chooses labels or resolves
+overlaps. Dataset preparation, annotator reconciliation and document-grouped
+cross-validation require a separate explicit policy.
