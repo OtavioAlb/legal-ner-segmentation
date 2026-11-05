@@ -273,3 +273,53 @@ Numbers must be recalculated after re-ingestion.
 **This section supersedes earlier blanket statements** that every blank
 reviewed field is excluded or that only fully populated reviewed rows can
 be part of the supervised view.
+
+
+## Phase 1 deterministic sanitization (separate from ingestion/audit)
+
+Run after ingestion and audit:
+
+    python -m legal_nlp.sanitization --dataset data/interim/phase_1 --output data/interim/phase_1/sanitized
+
+Implementation: src/legal_nlp/sanitization.py.
+Versioned rules: configs/sanitization_rules.json.
+
+Four local-only outputs:
+
+- sanitized_annotations.jsonl: all previously valid spans plus newly recovered
+  ones; one row per source annotation; no deduplication or overlap pruning.
+- sanitization_actions.jsonl: successful, atomic, per-field transformations with
+  original and resulting values, original row and rule ID.
+- sanitization_exclusions.jsonl: one row for every source annotation still not
+  eligible, with explicit reasons and original technical issues.
+- sanitization_summary.json: input/baseline/final counts, net new eligible spans,
+  transformation counts, exclusion reasons and task counts.
+
+Only the following transformations are allowed:
+
+1. Missing source document ID: recover only if exact original excerpt matches
+   the same start/end offsets in exactly **one** source document. A malformed or
+   nonempty unresolved source ID never triggers candidate guessing.
+2. Unknown label: apply only explicitly enumerated lexical aliases in
+   configs/sanitization_rules.json, checked against canonical labels.
+   ENT_JUR_DECISAO is intentionally **not** mapped.
+3. Text mismatch: accept **case-only** differences, retaining original
+   character boundaries and recording the original and document-derived text.
+   Whitespace differences and other mismatch classes remain excluded.
+
+All recovered spans undergo joint validation of selected review state,
+document identity, canonical label, integer offsets, document bounds and
+permitted text equivalence. Recovery is atomic: a partially repaired row stays
+excluded, and no failed action appears among successful transformations.
+
+Rows with conflicting evaluator votes and no final corrected annotation
+(e.g., CSV lines 946 and 991), unresolved evaluation, or incomplete reviewed
+fields never enter the sanitized supervision. The previously discussed line
+1910 remains excluded unless its mismatch is independently proven to be only
+a case difference; no offset adjustment is allowed. The rules do not rely on
+an LLM, a second reviewer pass or majority voting.
+
+This view is **not** the model-ready gold set: duplicate labels across
+annotators, overlaps, document-grouped evaluation folds and token alignment
+are subsequent explicit phases. No actual TJSP text or source data is
+committed to the public repository.
