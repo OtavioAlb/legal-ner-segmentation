@@ -114,3 +114,17 @@ same document and task regardless of label. Both start and end must differ
 by at most 10 characters, and intervals must share a character. Exact
 duplicates with identical labels stay in the separate duplicates report.
 These are candidates for analysis, never automatically removed.
+
+## Evaluator precedence for different-label near-boundary spans
+
+To inspect the 76 observed pairs with different final labels, without
+changing the span-based supervised view:
+
+~~~powershell
+python -m legal_nlp.reviewer_priority --annotations data/interim/phase_1/annotations.jsonl --candidates data/interim/phase_1/span_diagnostics/near_boundary_candidates.jsonl --output data/interim/phase_1/reviewer_priority
+~~~
+
+Review `review_priority_summary.json` and
+`different_label_review_evidence.jsonl`. Corrections by evaluators override
+the SAME annotation's original label. Two independent evaluated spans can
+still legitimately have different labels; no winner is automatically selected.
