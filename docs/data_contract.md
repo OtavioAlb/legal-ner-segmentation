@@ -403,3 +403,26 @@ priority evidence but DOES NOT discard spans, infer reviewer intent,
 vote between annotators, or apply BIO conversion.
 
 Do not interpret the 76 different-label candidate pairs as 76 errors.
+
+## Phase 1 logical-span grouping (lossless)
+
+After reviewer-priority diagnosis, grouping for eventual span-based training
+uses EXACT equality on (document_id, task, start, end, label). Different
+labels on identical offsets remain separate. Same-label boundaries within
++/-10 remain separate; they are NOT automatically snapped or merged.
+
+Run:
+
+    python -m legal_nlp.logical_spans --sanitized data/interim/phase_1/sanitized/sanitized_annotations.jsonl --annotations data/interim/phase_1/annotations.jsonl --output data/interim/phase_1/logical_spans
+
+Output logical_spans.jsonl includes a deterministic ID for each logical
+span, its document/task/label/offsets, all source annotation IDs and rows,
+annotator IDs, selection status, original/revised labels, reviewer counts,
+and sanitization provenance. It does not modify source CSVs, ingest files,
+or the sanitized annotation view.
+
+logical_spans_summary.json includes the number of unique labeled spans,
+input annotations, exact duplicates grouped, and per-task counts.
+All final evaluator-reviewed fields remain authoritative per source record.
+This is a non-destructive LOGICAL VIEW, not adjudication or a model-ready
+train/validation split. BIO conversion and overlap pruning are prohibited.
