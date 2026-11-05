@@ -141,3 +141,21 @@ python -m legal_nlp.logical_spans --sanitized data/interim/phase_1/sanitized/san
 Produces logical_spans.jsonl and logical_spans_summary.json locally. Different
 labels and near-boundary alternatives are preserved; reviewer corrections
 remain authoritative per source annotation. This is not a training split.
+
+## Document-aligned span dataset and cross-validation folds
+
+Build the local (not committed) dataset and deterministic five-fold
+document-disjoint assignments after logical-span grouping:
+
+~~~powershell
+python -m legal_nlp.document_dataset --documents data/interim/phase_1/documents.jsonl --logical-spans data/interim/phase_1/logical_spans/logical_spans.jsonl --output data/interim/phase_1/document_dataset --folds 5 --seed 42
+~~~
+
+Outputs: document_spans.jsonl, document_folds.json,
+document_dataset_summary.json. With the 25-document Phase 1 corpus,
+each fold should use 20 complete training documents and 5 validation
+documents. The split is deterministic but not label stratified. These
+assignments are *document-disjoint*; because the dataset has no verified
+process-level grouping identifier, they do NOT yet prove independence
+between different judicial decisions in the same proceeding.
+No separate held-out test set, BIO encoding, or model training is created.
