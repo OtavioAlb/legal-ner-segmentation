@@ -26,8 +26,11 @@ def _document(i, text=None):
 
 def _span(i, task="NER", start=0, end=7, label=None):
     label = label or ("ENT_RELATOR" if task == "NER" else "SEG_EMENTA")
+    # Unique per logical span: same document/task can have different labels
+    # at identical offsets, which is valid for span-based annotation.
+    key = f"{i}_{task}_{start}_{end}_{label}"
     return {
-        "logical_span_id": f"ls_{i}_{task}",
+        "logical_span_id": f"ls_{key}",
         "document_id": f"phase1:{i}",
         "task": task,
         "start": start,
@@ -35,8 +38,8 @@ def _span(i, task="NER", start=0, end=7, label=None):
         "label": label,
         "source_annotation_count": 2,
         "provenance": [
-            {"annotation_id": f"a{i}_{task}_1", "source_row": i * 2 + 1},
-            {"annotation_id": f"a{i}_{task}_2", "source_row": i * 2 + 2},
+            {"annotation_id": f"a{key}_1", "source_row": i * 2 + 1},
+            {"annotation_id": f"a{key}_2", "source_row": i * 2 + 2},
         ],
     }
 
