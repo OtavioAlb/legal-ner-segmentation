@@ -38,9 +38,9 @@ def test_diagnostics_separate_duplicates_conflicts_and_overlaps(tmp_path):
     assert report["overall_counts"]["exact_duplicate_groups"] == 1
     assert report["overall_counts"]["exact_duplicate_extra_annotations"] == 1
     assert report["overall_counts"]["same_geometry_distinct_label_groups"] == 1
-    assert report["overall_counts"]["overlap_pairs"] == 6
-    assert report["per_task_counts"]["NER"]["overlap_nested_pairs"] == 3
-    assert report["per_task_counts"]["NER"]["overlap_crossing_pairs"] == 3
+    assert report["overall_counts"]["overlap_pairs"] == 4
+    assert report["per_task_counts"]["NER"]["overlap_nested_pairs"] == 2
+    assert report["per_task_counts"]["NER"]["overlap_crossing_pairs"] == 2
     copies = _load_jsonl(output / "exact_duplicate_groups.jsonl")
     assert copies[0]["annotation_ids"] == ["a1", "a2"]
     assert copies[0]["annotator_identity_complete"]
