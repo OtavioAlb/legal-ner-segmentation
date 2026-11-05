@@ -13,12 +13,11 @@
     "SEG_JURISPRIDENCIA_VOTO_VENCEDOR": "SEG_JURISPRUDENCIA_VOTO_VENCEDOR"
   },
   "accepted_text_equivalences": [
-    "case_only",
-    "edge_whitespace",
-    "whitespace_internal"
+    "case_only"
   ],
   "document_linkage": {
     "requires_missing_source_id": true,
     "requires_unique_exact_match": true
-  }
+  },
+  "text_policy": "Accept case-only differences without changing the original offsets; reject whitespace/boundary mismatches until separately proven."
 }
