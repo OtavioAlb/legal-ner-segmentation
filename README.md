@@ -80,3 +80,21 @@ evaluator-corrected values are final for Phase 1. Conflicting reviews without
 a complete correction are excluded from the supervised view. The audit excludes incomplete or technically invalid
 records conservatively and preserves every original row. No original data
 are deleted.
+
+
+## Phase 1 deterministic sanitization
+
+After ingesting and auditing private input files, run:
+
+~~~powershell
+python -m legal_nlp.sanitization --dataset data/interim/phase_1 --output data/interim/phase_1/sanitized
+Get-Content data/interim/phase_1/sanitized/sanitization_summary.json
+~~~
+
+Outputs remain local/ignored: sanitized_annotations.jsonl,
+sanitization_actions.jsonl, sanitization_exclusions.jsonl and
+sanitization_summary.json. The stage uses only explicit lexical aliases,
+unique exact document/excerpt/offset linkage, and case-only text equivalence.
+It preserves evaluation conflicts as exclusions. No source data is changed,
+no LLM is used, and there is no deduplication or overlap pruning. See
+docs/data_contract.md for the complete contract.
