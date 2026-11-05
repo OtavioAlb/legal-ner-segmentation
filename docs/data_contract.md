@@ -348,3 +348,30 @@ These are diagnostic candidate conflicts, not automatically invalid spans.
 The tool neither drops duplicate annotations nor chooses labels or resolves
 overlaps. Dataset preparation, annotator reconciliation and document-grouped
 cross-validation require a separate explicit policy.
+
+## Near-identical boundaries in span-based annotation (diagnostics v1.1.0)
+
+Both NER and SEG use span-based annotations, not BIO token tagging. Overlaps,
+nesting, shared boundaries and different labels are not automatically errors.
+
+A candidate in near_boundary_candidates.jsonl must satisfy ALL of:
+- Same document and task (NER vs SEG remain separate);
+- Absolute start delta <= 10 characters, inclusive;
+- Absolute exclusive-end delta <= 10 characters, inclusive;
+- Positive text intersection (at least one shared character);
+- Not an exact duplicate with the same label.
+
+Both offset conditions are mandatory regardless of labels. The intersection
+condition avoids flagging short but disjoint, nearby entities. Labels may
+match or differ, and candidates are not grouped transitively.
+
+Candidates are classified as identical_offsets_different_label,
+near_boundaries_same_label, or near_boundaries_different_label, with
+signed offset deltas, source rows, annotation IDs and annotator provenance.
+These are diagnostic candidates, not confirmed errors or removal directives.
+
+Command: python -m legal_nlp.span_diagnostics --boundary-tolerance 10
+
+Existing overlap counts remain descriptive, never error counts. The summary
+now includes boundary_candidate_pairs and a per-task category breakdown.
+No supervised annotations, offsets or raw inputs are changed.
