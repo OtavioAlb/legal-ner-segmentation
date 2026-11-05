@@ -22,8 +22,18 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
 def diagnose_spans(
     input_path: str | Path,
     output_dir: str | Path,
+    boundary_tolerance: int = 10,
 ) -> dict[str, Any]:
-    """Analyze duplicates and overlaps; leave the sanitized view unchanged."""
+    """Analyze span annotations without changing them.
+
+    A boundary candidate must share document/task, overlap by at least one
+    character, and have both start and end deltas within tolerance.
+    Labels may be equal or different. A candidate is not a proven error.
+    """
+    if isinstance(boundary_tolerance, bool) or not isinstance(boundary_tolerance, int):
+        raise ValueError("boundary_tolerance must be an integer")
+    if boundary_tolerance < 0:
+        raise ValueError("boundary_tolerance must be nonnegative")
     input_path, output_dir = Path(input_path), Path(output_dir)
     with input_path.open(encoding="utf-8") as source:
         records = [json.loads(line) for line in source if line.strip()]
@@ -49,6 +59,7 @@ def diagnose_spans(
     exact_duplicates: list[dict[str, Any]] = []
     label_conflicts: list[dict[str, Any]] = []
     overlapping: list[dict[str, Any]] = []
+    boundary_candidates: list[dict[str, Any]] = []
     metrics: dict[str, Counter] = {"NER": Counter(), "SEG": Counter()}
     involved_ann_ids: dict[str, set[str]] = {"NER": set(), "SEG": set()}
 
@@ -108,10 +119,76 @@ def diagnose_spans(
             })
             metric["same_geometry_distinct_label_groups"] += 1
 
-        # Compare unique labeled spans: repeated annotator records should not
-        # multiply an overlap measurement. Exact-geometry label disagreements
-        # are counted above rather than called boundary overlap.
+        # Span-based NER and SEG allow overlaps, nesting and different labels.
+        # Compare UNIQUE labeled spans so repeated records do not multiply
+        # near-boundary diagnostics. Never infer an error from overlap alone.
         spans = sorted(label_groups)
+        for i, first in enumerate(spans):
+            a_start, a_end, a_label = first
+            for second in spans[i + 1:]:
+                b_start, b_end, b_label = second
+                if b_start - a_start > boundary_tolerance:
+                    break  # start-ordered, so later candidates also fail
+                delta_start = b_start - a_start
+                delta_end = b_end - a_end
+                if abs(delta_end) > boundary_tolerance:
+                    continue
+                overlap_chars = min(a_end, b_end) - max(a_start, b_start)
+                if overlap_chars <= 0:
+                    continue
+                same_geometry = (a_start, a_end) == (b_start, b_end)
+                if same_geometry and a_label == b_label:
+                    continue  # exact duplicate, already handled independently
+                if same_geometry:
+                    category = "identical_offsets_different_label"
+                elif a_label == b_label:
+                    category = "near_boundaries_same_label"
+                else:
+                    category = "near_boundaries_different_label"
+                left_rows = label_groups[first]
+                right_rows = label_groups[second]
+                left_annotators = sorted({
+                    row["annotator_id"] for row in left_rows
+                    if isinstance(row.get("annotator_id"), str) and row["annotator_id"]
+                })
+                right_annotators = sorted({
+                    row["annotator_id"] for row in right_rows
+                    if isinstance(row.get("annotator_id"), str) and row["annotator_id"]
+                })
+                boundary_candidates.append({
+                    "document_id": document_id,
+                    "task": task,
+                    "category": category,
+                    "status": "candidate_not_confirmed_error",
+                    "boundary_tolerance": boundary_tolerance,
+                    "delta_start": delta_start,
+                    "delta_end": delta_end,
+                    "overlap_chars": overlap_chars,
+                    "shared_annotator_ids": sorted(
+                        set(left_annotators) & set(right_annotators)
+                    ),
+                    "first": {
+                        "start": a_start, "end": a_end, "label": a_label,
+                        "annotation_ids": sorted(
+                            row["annotation_id"] for row in left_rows
+                        ),
+                        "source_rows": sorted(row["source_row"] for row in left_rows),
+                        "annotator_ids": left_annotators,
+                    },
+                    "second": {
+                        "start": b_start, "end": b_end, "label": b_label,
+                        "annotation_ids": sorted(
+                            row["annotation_id"] for row in right_rows
+                        ),
+                        "source_rows": sorted(row["source_row"] for row in right_rows),
+                        "annotator_ids": right_annotators,
+                    },
+                })
+                metric["boundary_candidate_pairs"] += 1
+                metric[f"boundary_{category}_pairs"] += 1
+
+        # Legacy geometric characterization (not a list of errors).
+        # Excludes identical geometry, already tracked as label disagreements.
         for i, first in enumerate(spans):
             a_start, a_end, a_label = first
             for second in spans[i + 1:]:
@@ -152,7 +229,8 @@ def diagnose_spans(
         metrics[task]["annotations_involved_in_overlap"] = len(involved_ann_ids[task])
 
     summary = {
-        "diagnostics_schema_version": "1.0.0",
+        "diagnostics_schema_version": "1.1.0",
+        "boundary_tolerance": boundary_tolerance,
         "input_annotation_count": len(records),
         "documents_with_annotations": len({k[0] for k in groups}),
         "overall_counts": {
@@ -162,19 +240,35 @@ def diagnose_spans(
             ),
             "same_geometry_distinct_label_groups": len(label_conflicts),
             "overlap_pairs": len(overlapping),
+            "boundary_candidate_pairs": len(boundary_candidates),
+            "boundary_identical_offsets_different_label_pairs": sum(
+                x["category"] == "identical_offsets_different_label"
+                for x in boundary_candidates
+            ),
+            "boundary_near_boundaries_same_label_pairs": sum(
+                x["category"] == "near_boundaries_same_label"
+                for x in boundary_candidates
+            ),
+            "boundary_near_boundaries_different_label_pairs": sum(
+                x["category"] == "near_boundaries_different_label"
+                for x in boundary_candidates
+            ),
         },
         "per_task_counts": {
             task: dict(sorted(metrics[task].items())) for task in ("NER", "SEG")
         },
         "policy": (
-            "diagnostic only; exact duplicates and overlaps are not removed; "
-            "no cross-task overlap comparison; no training dataset mutation"
+            "span-based NER and SEG; compare each unique labeled span pair "
+            "within document/task; BOTH start/end within +/-tolerance AND "
+            "positive intersection; labels may differ; candidate is not an error; "
+            "no removals, BIO conversion or training dataset mutation"
         ),
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(output_dir / "exact_duplicate_groups.jsonl", exact_duplicates)
     _write_jsonl(output_dir / "same_span_label_conflicts.jsonl", label_conflicts)
     _write_jsonl(output_dir / "within_task_overlap_pairs.jsonl", overlapping)
+    _write_jsonl(output_dir / "near_boundary_candidates.jsonl", boundary_candidates)
     (output_dir / "span_diagnostics_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -194,8 +288,12 @@ def main() -> None:
         "--output", type=Path,
         default=Path("data/interim/phase_1/span_diagnostics"),
     )
+    parser.add_argument(
+        "--boundary-tolerance", type=int, default=10,
+        help="Inclusive +/- character tolerance at BOTH start and end (default: 10)",
+    )
     args = parser.parse_args()
-    print(json.dumps(diagnose_spans(args.input, args.output),
+    print(json.dumps(diagnose_spans(args.input, args.output, args.boundary_tolerance),
                      ensure_ascii=False, indent=2))
 
 
