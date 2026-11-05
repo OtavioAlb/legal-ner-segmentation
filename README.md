@@ -128,3 +128,16 @@ Review `review_priority_summary.json` and
 `different_label_review_evidence.jsonl`. Corrections by evaluators override
 the SAME annotation's original label. Two independent evaluated spans can
 still legitimately have different labels; no winner is automatically selected.
+
+## Lossless logical span grouping
+
+After sanitization, consolidate only identical document/task/start/end/label
+spans into a logical record with full reviewer and annotator provenance:
+
+~~~powershell
+python -m legal_nlp.logical_spans --sanitized data/interim/phase_1/sanitized/sanitized_annotations.jsonl --annotations data/interim/phase_1/annotations.jsonl --output data/interim/phase_1/logical_spans
+~~~
+
+Produces logical_spans.jsonl and logical_spans_summary.json locally. Different
+labels and near-boundary alternatives are preserved; reviewer corrections
+remain authoritative per source annotation. This is not a training split.
