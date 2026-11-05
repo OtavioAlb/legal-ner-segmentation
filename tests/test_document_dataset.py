@@ -125,3 +125,15 @@ def test_document_dataset_rejects_shared_acordao_id(tmp_path):
     _write_jsonl(spanpath, [])
     with pytest.raises(ValueError, match="Repeated idacordao"):
         build_document_dataset(docpath, spanpath, tmp_path / "out", folds=2)
+
+
+def test_document_dataset_rejects_duplicate_logical_span_id(tmp_path):
+    docpath = tmp_path / "documents.jsonl"
+    spanpath = tmp_path / "spans.jsonl"
+    _write_jsonl(docpath, [_document(1), _document(2)])
+    a = _span(1)
+    b = _span(2)
+    b["logical_span_id"] = a["logical_span_id"]
+    _write_jsonl(spanpath, [a, b])
+    with pytest.raises(ValueError, match="duplicate logical span ID"):
+        build_document_dataset(docpath, spanpath, tmp_path / "out", folds=2)
