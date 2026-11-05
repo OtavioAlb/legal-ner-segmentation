@@ -98,3 +98,19 @@ unique exact document/excerpt/offset linkage, and case-only text equivalence.
 It preserves evaluation conflicts as exclusions. No source data is changed,
 no LLM is used, and there is no deduplication or overlap pruning. See
 docs/data_contract.md for the complete contract.
+
+## Span boundary diagnostics (+/-10 characters)
+
+Both NER and SEG are trained as span-based tasks (not flat BIO).
+Overlaps between different labels are allowed. To flag only nearly
+coincident boundaries, run:
+
+~~~powershell
+python -m legal_nlp.span_diagnostics --input data/interim/phase_1/sanitized/sanitized_annotations.jsonl --output data/interim/phase_1/span_diagnostics --boundary-tolerance 10
+~~~
+
+The new near_boundary_candidates.jsonl report compares spans within the
+same document and task regardless of label. Both start and end must differ
+by at most 10 characters, and intervals must share a character. Exact
+duplicates with identical labels stay in the separate duplicates report.
+These are candidates for analysis, never automatically removed.
