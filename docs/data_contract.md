@@ -426,3 +426,37 @@ input annotations, exact duplicates grouped, and per-task counts.
 All final evaluator-reviewed fields remain authoritative per source record.
 This is a non-destructive LOGICAL VIEW, not adjudication or a model-ready
 train/validation split. BIO conversion and overlap pruning are prohibited.
+
+## Document-aligned span dataset and 5-fold cross-validation (Phase 1)
+
+The read-only preparation step consumes documents.jsonl and
+logical_spans/logical_spans.jsonl. Run:
+
+    python -m legal_nlp.document_dataset --documents data/interim/phase_1/documents.jsonl --logical-spans data/interim/phase_1/logical_spans/logical_spans.jsonl --output data/interim/phase_1/document_dataset --folds 5 --seed 42
+
+Local output files:
+- document_spans.jsonl: full original document text and both NER/SEG
+  logical-span arrays, with original character offsets and provenance;
+- document_folds.json: for each fold, disjoint train/validation document IDs;
+- document_dataset_summary.json: input counts, fold sizes, and label coverage.
+
+With 25 documents and 5 folds, validation comprises 5 complete documents
+per fold and training comprises 20; every document validates exactly once.
+Assignment is deterministic and order-independent with a seed and
+SHA-256 sorting. This is NOT label stratification; inspect per-fold
+label coverage before choosing an evaluation protocol.
+
+Preflight checks fail closed on duplicate document IDs, duplicate text hashes,
+repeated nonempty decision IDs (idacordao), invalid text hashes, unknown
+document references, invalid span offsets, duplicate logical-span keys or
+IDs, and missing/inconsistent source provenance.
+
+IMPORTANT: document_id and idacordao identify documents/decisions, NOT
+necessarily the underlying judicial proceeding. Multiple distinct acórdãos
+from the same case could leak procedural content between folds. Process-level
+grouping remains unresolved unless an authoritative process identifier
+is supplied. Therefore these folds are document-disjoint, NOT claimed
+process-disjoint. No independent test set has been reserved yet.
+
+No source text is committed to Git. No BIO conversion, label arbitration,
+forced flattening, model training or data deletion occurs in this step.
