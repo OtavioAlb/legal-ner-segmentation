@@ -205,3 +205,24 @@ The program stops without writing new output when it finds unmatched
 decision IDs, changed source text, duplicate evaluations by one reviewer,
 self-evaluation, invalid provenance or conflicting paths. It does not modify
 the input exports, adjudicate labels, or write private data to GitHub.
+
+
+### Export consolidated evaluations to CSV
+
+The consolidated JSON remains the authoritative lossless representation.
+Create a companion CSV with one logical row per evaluation (60 rows in the
+current Phase 2 corpus). This includes three direct columns for
+`idacordao`, `annotated_by` and `evaluated_by`; nested properties such as
+`annotations`, `data`, and `predictions` are preserved as JSON strings
+inside CSV cells.
+
+~~~powershell
+python -m legal_nlp.phase2_csv `
+  --input "data/interim/phase_2/merged_evaluations.json" `
+  --output "data/interim/phase_2/merged_evaluations.csv"
+~~~
+
+The CSV is UTF-8 with BOM to improve Excel compatibility. Large annotation
+JSON cells may exceed Excel's per-cell display/storage limits, so the JSON
+file should remain the authoritative source and the CSV is a convenience
+export. Neither artifact is committed to Git.
