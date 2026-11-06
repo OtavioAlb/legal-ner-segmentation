@@ -185,9 +185,9 @@ Keep all JSON exports private, for example in `data/raw/phase_2/`:
 
 ~~~powershell
 python -m legal_nlp.phase2_evaluation_merge `
-  --annotations "data/raw/phase_2/project-anotation.json" `
-  --evaluation-1 "data/raw/phase_2/project-evaluation-1.json" `
-  --evaluation-2 "data/raw/phase_2/project-evaluation-2.json" `
+  --annotations "data/raw/phase_2/project-anotation-at-2026-09-23-13-29-8041568a.json" `
+  --evaluation-1 "data/raw/phase_2/project-evaluation-1-at-2026-11-06-13-23-0a2a9712.json" `
+  --evaluation-2 "data/raw/phase_2/project-evaluation-2-at-2026-11-06-13-23-6f3cba3d.json" `
   --output "data/interim/phase_2/merged_evaluations.json" `
   --report "data/interim/phase_2/merged_evaluations_report.json"
 ~~~
