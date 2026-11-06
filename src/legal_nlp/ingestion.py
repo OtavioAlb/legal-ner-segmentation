@@ -1,0 +1,471 @@
+"""Lossless Phase 1 importer for judicial decisions and individual annotations.
+
+Records are preserved even when structurally invalid. No majority voting,
+deduplication, span trimming, or overlap removal is performed.
+"""
+from __future__ import annotations
+
+import codecs
+import csv
+import hashlib
+import io
+import json
+import re
+import unicodedata
+from collections import Counter
+from pathlib import Path
+from typing import Any, Iterable
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _decode_csv(payload: bytes, encoding: str = "auto") -> tuple[str, str]:
+    """Decode CSV strictly; record the encoding used for reproducibility.
+
+    Automatic detection prefers UTF-8 and then legacy Windows/Latin-1 encodings.
+    The fallback is not definitive detection; use an explicit encoding if needed.
+    """
+    if encoding != "auto":
+        return payload.decode(encoding, errors="strict"), encoding
+
+    if payload.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return payload.decode("utf-16", errors="strict"), "utf-16"
+
+    for candidate in ("utf-8-sig", "cp1252", "iso-8859-1"):
+        try:
+            return payload.decode(candidate, errors="strict"), candidate
+        except UnicodeDecodeError:
+            continue
+    raise UnicodeError("Could not decode the CSV with supported encodings")
+
+
+def _load_rows(
+    path: Path, encoding: str = "auto"
+) -> tuple[list[dict[str, Any]], str]:
+    if path.suffix.lower() == ".xlsx":
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise RuntimeError("Install with: pip install -e '.[xlsx]'") from exc
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        try:
+            sheet = workbook.active
+            rows = sheet.iter_rows(values_only=True)
+            header = next(rows)
+            names = [str(v).strip() if v is not None else "" for v in header]
+            return [dict(zip(names, values)) for values in rows], "xlsx"
+        finally:
+            workbook.close()
+    if path.suffix.lower() != ".csv":
+        raise ValueError(f"Unsupported input: {path.suffix}")
+    content, used_encoding = _decode_csv(path.read_bytes(), encoding)
+    with io.StringIO(content, newline="") as stream:
+        sample = stream.read(8192)
+        stream.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+            delim = dialect.delimiter
+        except csv.Error:
+            delim = ","
+        return list(csv.DictReader(stream, delimiter=delim)), used_encoding
+
+
+def _value(row: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        result = str(value).strip()
+        if result and result.lower() not in {"nan", "none", "null"}:
+            return result
+    return None
+
+
+def _raw_span_text(row: dict[str, Any], *keys: str) -> str | None:
+    """Read an annotated excerpt without stripping meaningful whitespace."""
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = value if isinstance(value, str) else str(value)
+        if text and text.strip().lower() not in {"nan", "none", "null"}:
+            return text
+    return None
+
+
+def normalize_document_id(identifier: str | None) -> str | None:
+    """Normalize spreadsheet artifacts like '290.0' to '290', preserving other IDs.
+
+    Do not coerce arbitrary identifiers to numbers: leading zeros, identifiers
+    with meaningful decimal components, and nonnumeric IDs are preserved.
+    """
+    if identifier is None:
+        return None
+    cleaned = identifier.strip()
+    match = re.fullmatch(r"([0-9]+)\.0+", cleaned)
+    return match.group(1) if match else cleaned
+
+
+def normalize_review_vote(value: Any) -> str:
+    """Classify explicit reviewer answers without imputing missing votes."""
+    if value is None or not str(value).strip():
+        return "not_recorded"
+    text = unicodedata.normalize("NFKD", str(value).strip())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
+    if text == "sim":
+        return "agree"
+    if text == "nao":
+        return "disagree"
+    return "other_not_interpreted"
+
+
+def _offset(row: dict[str, Any], *keys: str) -> int | None:
+    value = _value(row, *keys)
+    if value is None:
+        return None
+    try:
+        number = float(value)
+        return int(number) if number.is_integer() else None
+    except ValueError:
+        return None
+
+
+def _write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as stream:
+        for row in rows:
+            stream.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def ingest_phase1(
+    texts_path: str | Path,
+    annotations_path: str | Path,
+    output_dir: str | Path,
+    labels_path: str | Path,
+    aliases_path: str | Path,
+    texts_encoding: str = "auto",
+    annotations_encoding: str = "auto",
+) -> dict[str, Any]:
+    """Import Phase 1 into canonical documents, per-annotator annotations and issues.
+
+    Inputs are required to contain:
+      documents: id, text (or acordao)
+      annotations: id_text, label_new, start_new, end_exclusive_new
+    """
+    texts_path = Path(texts_path)
+    annotations_path = Path(annotations_path)
+    output_dir = Path(output_dir)
+    label_config = json.loads(Path(labels_path).read_text(encoding="utf-8"))
+    alias_config = json.loads(Path(aliases_path).read_text(encoding="utf-8"))
+    labels = set(label_config["labels"])
+    aliases = alias_config["aliases"]
+    if not all(target in labels for target in aliases.values()):
+        raise ValueError("Aliases contain unknown target labels")
+    texts, decoded_texts_as = _load_rows(texts_path, texts_encoding)
+    raw_annotations, decoded_annotations_as = _load_rows(
+        annotations_path, annotations_encoding
+    )
+    if texts and not ({"id", "text"} <= set(texts[0]) or
+                      {"id", "acordao"} <= set(texts[0])):
+        raise ValueError("Documents must include id and text/acordao")
+    if raw_annotations and not {
+        "id_text", "label_new", "start_new", "end_exclusive_new"
+    } <= set(raw_annotations[0]):
+        raise ValueError("Annotations must contain id_text, label_new, start_new, end_exclusive_new")
+
+    documents: list[dict[str, Any]] = []
+    document_by_source: dict[str, dict[str, Any]] = {}
+    ambiguous_keys: set[str] = set()
+    issues: list[dict[str, Any]] = []
+    for index, row in enumerate(texts, start=2):
+        source_id = _value(row, "id")
+        normalized_id = normalize_document_id(source_id)
+        text = row.get("text") if row.get("text") is not None else row.get("acordao")
+        if not source_id or not isinstance(text, str):
+            issues.append({"scope": "document", "source_row": index,
+                           "code": "INVALID_DOCUMENT"})
+            continue
+        if normalized_id in document_by_source or normalized_id in ambiguous_keys:
+            previous = document_by_source.pop(normalized_id, None)
+            ambiguous_keys.add(normalized_id)
+            issues.append({
+                "scope": "document",
+                "source_row": index,
+                "code": "AMBIGUOUS_DOCUMENT_ID",
+                "source_id": source_id,
+                "normalized_source_id": normalized_id,
+                "previous_source_id": previous["source_id"] if previous else None,
+            })
+            continue
+        document = {
+            "document_id": f"phase1:{source_id}",
+            "source_id": source_id,
+            "normalized_source_id": normalized_id,
+            "idacordao": _value(row, "idacordao"),
+            "phase": 1,
+            "text": text,
+            "text_sha256": _sha256(text.encode("utf-8")),
+            "source_row": index,
+        }
+        documents.append(document)
+        document_by_source[normalized_id] = document
+
+    annotations: list[dict[str, Any]] = []
+    for index, row in enumerate(raw_annotations, start=2):
+        source_id = _value(row, "id_text")
+        normalized_id = normalize_document_id(source_id)
+        # Preserve original and evaluator-corrected values independently.
+        # A blank correction does not imply rejection: explicit positive
+        # reviewer votes may validate the original, but conflicting or
+        # negative votes without a correction never authorize fallback.
+        original_fields = {
+            "label": _value(row, "label"),
+            "start": _offset(row, "start"),
+            "end": _offset(row, "end_exclusive"),
+            "span_text": _raw_span_text(row, "span_text"),
+        }
+        revised_fields = {
+            "label": _value(row, "label_new") if "label_new" in row else None,
+            "start": _offset(row, "start_new") if "start_new" in row else None,
+            "end": _offset(row, "end_exclusive_new") if "end_exclusive_new" in row else None,
+            "span_text": _raw_span_text(row, "span_text_new")
+            if "span_text_new" in row else None,
+        }
+        field_mapping = {
+            "label": "label_new",
+            "start": "start_new",
+            "end": "end_exclusive_new",
+            "span_text": "span_text_new",
+        }
+        reviewer_keys = sorted(
+            name[len("concorda_"):]
+            for name in row if name.startswith("concorda_")
+        )
+        reviewer_opinions = {
+            name: {
+                "agreement_raw": row.get(f"concorda_{name}"),
+                "status": normalize_review_vote(row.get(f"concorda_{name}")),
+                "comment_raw": row.get(f"comentario_{name}"),
+            }
+            for name in reviewer_keys
+        }
+        agree_count = sum(
+            opinion["status"] == "agree" for opinion in reviewer_opinions.values()
+        )
+        disagree_count = sum(
+            opinion["status"] == "disagree" for opinion in reviewer_opinions.values()
+        )
+        all_revised_present = all(field_mapping[key] in row for key in field_mapping)
+        revised_complete = (
+            all_revised_present and all(value is not None for value in revised_fields.values())
+        )
+        revised_all_empty = (
+            all_revised_present and all(value is None for value in revised_fields.values())
+        )
+        original_has_target = (
+            original_fields["label"] is not None
+            and original_fields["start"] is not None
+            and original_fields["end"] is not None
+        )
+        if revised_complete:
+            # Final evaluator correction, irrespective of earlier disagreement.
+            target_selection_status = "reviewed_final"
+            selected_fields = dict(revised_fields)
+            selection_origin = {key: "revised" for key in field_mapping}
+        elif revised_all_empty and agree_count > 0 and disagree_count == 0:
+            if original_has_target:
+                # An explicit SIM confirms the original when no reviewer said NAO.
+                target_selection_status = "original_confirmed_by_reviewers"
+                selected_fields = dict(original_fields)
+                selection_origin = {key: "original_confirmed" for key in field_mapping}
+            else:
+                target_selection_status = "confirmed_original_missing_target"
+                selected_fields = dict(revised_fields)
+                selection_origin = {key: "revised_blank" for key in field_mapping}
+        else:
+            selected_fields = {
+                key: revised_fields[key] if field_mapping[key] in row else original_fields[key]
+                for key in field_mapping
+            }
+            selection_origin = {
+                key: "revised" if field_mapping[key] in row else "original_unreviewed"
+                for key in field_mapping
+            }
+            if revised_all_empty and agree_count and disagree_count:
+                target_selection_status = "conflicting_votes_without_correction"
+            elif revised_all_empty and disagree_count:
+                target_selection_status = "disagreement_without_correction"
+            elif revised_all_empty:
+                target_selection_status = "no_evaluation_no_correction"
+            else:
+                target_selection_status = "incomplete_reviewed_fields"
+        original = selected_fields["label"]
+        canonical = aliases.get(original, original) if original else None
+        task = ("NER" if canonical and canonical.startswith("ENT_") else
+                "SEG" if canonical and canonical.startswith("SEG_") else None)
+        start = selected_fields["start"]
+        end = selected_fields["end"]
+        document = document_by_source.get(normalized_id or "")
+        record_id = "phase1:" + _sha256(
+            f"{annotations_path.name}:{index}".encode("utf-8")
+        )[:20]
+        errors: list[str] = []
+        if not document:
+            errors.append(
+                "AMBIGUOUS_DOCUMENT_ID"
+                if normalized_id in ambiguous_keys else "UNKNOWN_DOCUMENT"
+            )
+        if not original:
+            errors.append("MISSING_LABEL")
+        elif canonical not in labels:
+            errors.append("UNKNOWN_LABEL")
+        if start is None or end is None or start < 0 or start >= end:
+            errors.append("INVALID_OFFSETS")
+        elif document and end > len(document["text"]):
+            errors.append("END_OUT_OF_BOUNDS")
+        selected_text = selected_fields["span_text"]
+        if (document and start is not None and end is not None
+                and 0 <= start < end <= len(document["text"])
+                and selected_text is not None
+                and document["text"][start:end] != selected_text):
+            errors.append("SPAN_TEXT_MISMATCH")
+        review_flags = []
+        for field, revised_name in field_mapping.items():
+            if revised_name in row and revised_fields[field] is None:
+                if original_fields[field] is not None:
+                    review_flags.append(f"EMPTY_REVISED_{revised_name.upper()}")
+        if all(field_mapping[key] in row for key in field_mapping):
+            if all(revised_fields[key] is not None for key in field_mapping):
+                review_state = "revised_complete"
+            elif all(revised_fields[key] is None for key in field_mapping):
+                review_state = "revised_all_empty"
+            else:
+                review_state = "revised_incomplete"
+        else:
+            review_state = "no_complete_review_schema"
+
+        # Phase 1 evaluator-corrected fields are the final source of truth.
+        # Disagreement records remain provenance, not a new review gate.
+        # Newly inserted spans can exist in separate original CSV rows.
+        disagreement_reviewers = sorted(
+            name for name, opinion in reviewer_opinions.items()
+            if opinion["status"] == "disagree"
+        )
+        changed_fields = sorted(
+            field for field in field_mapping
+            if field_mapping[field] in row
+            and original_fields[field] != revised_fields[field]
+        )
+        if disagreement_reviewers:
+            correction_status = (
+                "reviewed_fields_changed_final"
+                if changed_fields else "reviewed_fields_unchanged_final"
+            )
+        else:
+            correction_status = "no_explicit_disagreement"
+
+        annotation = {
+            "annotation_id": record_id,
+            "document_id": document["document_id"] if document else None,
+            "source_document_id": source_id,
+            "normalized_source_document_id": normalized_id,
+            "phase": 1,
+            "source_row": index,
+            "annotator_id": _value(row, "annotator"),
+            "label_original": original,
+            "label_canonical": canonical if canonical in labels else None,
+            "task": task,
+            "start": start,
+            "end": end,
+            "span_text_source": selected_text,
+            "fields_original": original_fields,
+            "fields_revised": revised_fields,
+            "field_selection_source": selection_origin,
+            "target_selection_status": target_selection_status,
+            "review_agree_count": agree_count,
+            "review_disagree_count": disagree_count,
+            "review_state": review_state,
+            "reviewer_opinions": reviewer_opinions,
+            "disagreement_reviewers": disagreement_reviewers,
+            "changed_review_fields": changed_fields,
+            "correction_status": correction_status,
+            "review_flags": review_flags,
+            # Lossless provenance for original, revised and reviewer columns.
+            # Output remains local in ignored data/interim (never public Git).
+            "source_fields": {
+                str(key): None if value is None else str(value)
+                for key, value in row.items()
+            },
+            "validation_status": "issues_found" if errors else "structurally_valid",
+            "issues": errors,
+        }
+        annotations.append(annotation)
+        for code in errors:
+            issues.append({
+                "scope": "annotation",
+                "annotation_id": record_id,
+                "source_row": index,
+                "source_document_id": source_id,
+                "normalized_source_document_id": normalized_id,
+                "code": code,
+            })
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(output_dir / "documents.jsonl", documents)
+    _write_jsonl(output_dir / "annotations.jsonl", annotations)
+    _write_jsonl(output_dir / "validation_issues.jsonl", issues)
+    unmatched = Counter(
+        a["source_document_id"] or "<MISSING>"
+        for a in annotations
+        if "UNKNOWN_DOCUMENT" in a["issues"]
+    )
+    matching = {
+        "matched_annotations": sum(a["document_id"] is not None for a in annotations),
+        "matched_after_normalization": sum(
+            a["document_id"] is not None
+            and a["source_document_id"] != document_by_source[
+                a["normalized_source_document_id"]
+            ]["source_id"]
+            for a in annotations
+        ),
+        "unmatched_annotations": sum(unmatched.values()),
+        "unmatched_source_id_counts": dict(sorted(unmatched.items())),
+        "ambiguous_annotations": sum(
+            "AMBIGUOUS_DOCUMENT_ID" in a["issues"] for a in annotations
+        ),
+    }
+    manifest = {
+        "schema_version": label_config["schema_version"],
+        "phase": 1,
+        "document_count": len(documents),
+        "annotation_row_count": len(annotations),
+        "issues_count": len(issues),
+        "document_linkage": matching,
+        "annotation_status_counts": dict(Counter(a["validation_status"] for a in annotations)),
+        "review_flag_counts": dict(Counter(
+            flag for a in annotations for flag in a["review_flags"]
+        )),
+        "review_state_counts": dict(Counter(a["review_state"] for a in annotations)),
+        "target_selection_status_counts": dict(Counter(
+            a["target_selection_status"] for a in annotations
+        )),
+        "correction_status_counts": dict(Counter(
+            a["correction_status"] for a in annotations
+        )),
+        "task_counts": dict(Counter(a["task"] or "UNCLASSIFIED" for a in annotations)),
+        "input_encodings": {
+            "texts": decoded_texts_as,
+            "annotations": decoded_annotations_as,
+        },
+        "input_sha256": {
+            "texts": _sha256(texts_path.read_bytes()),
+            "annotations": _sha256(annotations_path.read_bytes()),
+            "labels": _sha256(Path(labels_path).read_bytes()),
+            "aliases": _sha256(Path(aliases_path).read_bytes()),
+        },
+    }
+    (output_dir / "dataset_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest

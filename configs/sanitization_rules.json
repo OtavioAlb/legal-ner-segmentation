@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "policy": "Explicit lexical equivalents only; ambiguous semantic mappings remain excluded. No raw data changes.",
+  "approved_label_aliases": {
+    "ENT_NORM_REGIMENTO": "ENT_NORMA_REGIMENTO",
+    "ENT_NORM_LEI": "ENT_NORMA_LEI",
+    "ENT_NORM_DECRETO": "ENT_NORMA_DECRETO",
+    "ENT_NORM_CONVENCAO_INTERNACIONAL": "ENT_NORMA_CONVENCAO_INTERNACIONAL",
+    "SEGMENTO_JURISPRUDENCIA_VOTO_VENCEDOR": "SEG_JURISPRUDENCIA_VOTO_VENCEDOR",
+    "SEG_JURISPRUDÊNCIA_VOTO_VENCEDOR": "SEG_JURISPRUDENCIA_VOTO_VENCEDOR",
+    "SEG_ARGUMENTAÇÃO_CONTRARIA": "SEG_ARGUMENTACAO_CONTRARIA",
+    "SEG_FUNDAMENTO_DECISA": "SEG_FUNDAMENTO_DECISAO",
+    "SEG_JURISPRIDENCIA_VOTO_VENCEDOR": "SEG_JURISPRUDENCIA_VOTO_VENCEDOR"
+  },
+  "accepted_text_equivalences": [
+    "case_only"
+  ],
+  "document_linkage": {
+    "requires_missing_source_id": true,
+    "requires_unique_exact_match": true
+  },
+  "text_policy": "Accept case-only differences without changing the original offsets; reject whitespace/boundary mismatches until separately proven."
+}
