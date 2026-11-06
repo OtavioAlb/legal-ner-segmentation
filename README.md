@@ -184,11 +184,11 @@ task `id`.
 Keep all JSON exports private, for example in `data/raw/phase_2/`:
 
 ~~~powershell
-python -m legal_nlp.phase2_evaluation_merge \
-  --annotations "data/raw/phase_2/project-anotation.json" \
-  --evaluation-1 "data/raw/phase_2/project-evaluation-1.json" \
-  --evaluation-2 "data/raw/phase_2/project-evaluation-2.json" \
-  --output "data/interim/phase_2/merged_evaluations.json" \
+python -m legal_nlp.phase2_evaluation_merge `
+  --annotations "data/raw/phase_2/project-anotation.json" `
+  --evaluation-1 "data/raw/phase_2/project-evaluation-1.json" `
+  --evaluation-2 "data/raw/phase_2/project-evaluation-2.json" `
+  --output "data/interim/phase_2/merged_evaluations.json" `
   --report "data/interim/phase_2/merged_evaluations_report.json"
 ~~~
 
