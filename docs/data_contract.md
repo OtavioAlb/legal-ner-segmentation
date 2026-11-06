@@ -6,8 +6,9 @@ This ingestion layer imports all individual annotations, including duplicates,
 unrecognized labels, invalid offsets and annotator disagreements. It does **not**
 produce adjudicated training targets.
 
-The reference label set comes from the supplied Label Studio XML specification:
-54 ENT_ and 11 SEG_ labels (65 total).
+The canonical taxonomy is version 1.1.0 with **67 labels (54 ENT and 13 SEG)**.
+It extends the initial Label Studio schema (54 ENT + 11 SEG) with explicit
+SEG_DECISAO_VOTO_VENCEDOR and SEG_DECISAO_VOTO_VENCIDO decisions.
 
 ## Required input
 
@@ -29,12 +30,14 @@ Offsets are character-based, with inclusive start and exclusive end.
 Text is not normalized; offset matching is exact. Mismatches are flagged, never
 silently trimmed or corrected. Rows with empty labels remain in the output.
 
-## Future decisions
+## Remaining decisions after Phase 1
 
-- Adjudication rules, overlaps, and incomplete annotation coverage.
-- Cross-phase identity resolution and label taxonomy mapping.
-- Split strategy grouped by judicial process and document.
-- Preparation of NER and segmentation supervised datasets.
+- Cross-phase identity resolution and canonical label alignment when the 35
+  Phase 2 documents are ingested.
+- Verify process-level identity before finalizing the 60-document split.
+- Finalize the 48-development/12-test assignment only on the full corpus;
+  the current 25-document folds remain provisional.
+- Model architecture and evaluation of span-based NER and segmentation.
 
 **No real judicial text or annotations should be committed to public Git.**
 
