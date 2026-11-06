@@ -172,3 +172,36 @@ all 48 and one final evaluation on the frozen 12. The split must respect
 judicial-process groups when they can be identified; its label distribution
 and class rarity must be audited before freezing. No IDs have been assigned
 or new data ingested yet. Details: [evaluation protocol](docs/evaluation_protocol_60.md).
+
+
+## Phase 2 — Consolidate two Label Studio evaluation exports
+
+The original annotation export identifies the **annotator** using
+`annotations[0].completed_by`; the evaluation exports use the same field
+for the **evaluator**. Join with `data.idacordao`, not the project-local
+task `id`.
+
+Keep all JSON exports private, for example in `data/raw/phase_2/`:
+
+~~~powershell
+python -m legal_nlp.phase2_evaluation_merge \
+  --annotations "data/raw/phase_2/project-anotation.json" \
+  --evaluation-1 "data/raw/phase_2/project-evaluation-1.json" \
+  --evaluation-2 "data/raw/phase_2/project-evaluation-2.json" \
+  --output "data/interim/phase_2/merged_evaluations.json" \
+  --report "data/interim/phase_2/merged_evaluations_report.json"
+~~~
+
+**Expected for the supplied corpus:** 35 original acórdãos, 60 evaluation
+records across 35 acórdãos, 25 with two evaluations, and 10 with one.
+An acórdão with only one evaluation is valid, not a missing-value error.
+Every evaluation record is kept **independent**, with two new top-level
+integer fields: `annotated_by` and `evaluated_by`. Records are ordered by
+annotator, then decision ID, then evaluator. The existing source fields
+(including `annotations[0].completed_by`, task IDs, evaluation choices,
+labels, results, and predictions) are not altered.
+
+The program stops without writing new output when it finds unmatched
+decision IDs, changed source text, duplicate evaluations by one reviewer,
+self-evaluation, invalid provenance or conflicting paths. It does not modify
+the input exports, adjudicate labels, or write private data to GitHub.
