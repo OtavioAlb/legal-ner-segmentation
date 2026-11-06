@@ -159,3 +159,16 @@ assignments are *document-disjoint*; because the dataset has no verified
 process-level grouping identifier, they do NOT yet prove independence
 between different judicial decisions in the same proceeding.
 No separate held-out test set, BIO encoding, or model training is created.
+
+
+## Planned final evaluation: 60 acórdãos
+
+The current 25-document, five-fold split is provisional and useful only for
+pipeline diagnostics. With 35 additional acórdãos, the planned protocol is
+**48 development documents (25 existing + 23 new)** and **12 untouched test
+documents selected from the 35 new**. Model selection uses five-fold
+cross-validation on the 48 development documents, followed by training on
+all 48 and one final evaluation on the frozen 12. The split must respect
+judicial-process groups when they can be identified; its label distribution
+and class rarity must be audited before freezing. No IDs have been assigned
+or new data ingested yet. Details: [evaluation protocol](docs/evaluation_protocol_60.md).
