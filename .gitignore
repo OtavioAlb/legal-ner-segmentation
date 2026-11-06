@@ -1,8 +1,11 @@
 # Private source data and artifacts
 /data/raw/
+/raw/
 /data/interim/
 /data/processed/
 /outputs/
+/output/
+/src/output/
 /mlruns/
 /mlruns3/
 /models/
