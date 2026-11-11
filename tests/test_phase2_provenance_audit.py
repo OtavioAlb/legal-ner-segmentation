@@ -40,7 +40,7 @@ def test_new_region_negative_identical_geometry_not_accepted(tmp_path):
     summary = audit(original, review11, review17, tmp_path / "output")
     assert summary["by_origin"] == {"NEW_IN_REVIEW": 1, "ORIGINAL": 1}
     rows = [json.loads(line) for line in
-            (tmp_path / "output/phase2_audit.jsonl").read_text().splitlines()]
+            (tmp_path / "output/phase2_audit.jsonl").read_text(encoding="utf-8").splitlines()]
     new = next(r for r in rows if r["region_id"] == "kQcIH4ot0Y")
     assert new["status"] == "PENDING_NEW"
     assert new["adjudicated"] is False
@@ -60,7 +60,7 @@ def test_same_geometry_different_id_not_identity(tmp_path):
     summary = audit(a, b, c, tmp_path / "out")
     assert summary["new_exact_geometry_groups"] == 1
     new = next(json.loads(line) for line in
-               (tmp_path / "out/phase2_audit.jsonl").read_text().splitlines()
+               (tmp_path / "out/phase2_audit.jsonl").read_text(encoding="utf-8").splitlines()
                if '"region_id": "B"' in line)
     assert new["origin"] == "NEW_IN_REVIEW"
     assert new["same_geometry_original_ids"] == ["A"]
@@ -76,7 +76,7 @@ def test_identical_new_proposals_are_grouped_without_automatic_adjudication(tmp_
     assert summary["new_exact_geometry_groups"] == 1
     assert summary["new_duplicate_geometry_records"] == 1
     group = json.loads((tmp_path / "out/phase2_new_candidate_groups.jsonl")
-                       .read_text().splitlines()[0])
+                       .read_text(encoding="utf-8").splitlines()[0])
     assert group["source_region_ids"] == ["B", "C"]
     assert group["projects_proposing"] == [11, 17]
     assert group["adjudicated"] is False
