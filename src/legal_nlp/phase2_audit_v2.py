@@ -15,6 +15,18 @@ SHEETS = ("Resumo", "Motivos_pendencia", "Revisao_originais", "Revisao_novas",
           "Por_acordao", "Instrucoes")
 NAMES = {"3": "Tiago", "4": "Mariana", "5": "Guilherme", "7": "Letícia",
          "8": "Emily", "9": "Giulia", "10": "Teresa", "12": "Maria"}
+MOTIVO_DESCRICOES = {
+    "aguardando_substituicao": "Região original em acórdão cuja avaliação atribuída a Teresa ainda não foi substituída; não há dois pareceres elegíveis.",
+    "ausencia_ou_divergencia_geometria": "Uma avaliação não contém o ID da região original ou as duas avaliações divergem em label, start ou end.",
+    "checkbox_divergente_geometria_igual": "As avaliações têm o mesmo label, start e end, mas decisões distintas após normalizar a classificação automática; isolada dos consolidados.",
+    "nova_aguardando_substituicao": "Nova proposta em acórdão com substituição de Teresa pendente; não consolidar antes de concluir as avaliações.",
+    "nova_unilateral_pendente": "Região criada por apenas um avaliador, sem proposta de mesma label e offsets no outro projeto; requer segunda revisão.",
+    "nova_ambigua_ids_duplicados": "Há múltiplos IDs novos com a mesma geometria em ao menos um projeto; correspondência ambígua entre as propostas.",
+    "nova_duplicada_do_original": "A geometria da nova proposta também existe em uma região original; evitar contagem dupla.",
+    "nova_sem_avaliadores_distintos": "As propostas coincidentes não foram produzidas por dois avaliadores distintos.",
+    "nova_coincidente_pendente": "Duas novas propostas têm mesma geometria, mas alguma condição de consolidação automática ainda não foi satisfeita.",
+}
+
 
 
 def load(path):
@@ -280,7 +292,25 @@ def audit(original, evaluation_11, evaluation_17):
                     "motivo": reason,
                     "adjudicada": False,
                 })
-        sheets["Por_acordao"].append({
+        # Recalculate ENT_/SEG_ metrics from the same immutable evidence rows.
+        original_docs = [r for r in sheets["Revisao_originais"] if r["idacordao"] == doc]
+        new_docs = [r for r in sheets["Revisao_novas"] if r["idacordao"] == doc]
+        consolidated_docs = [r for r in sheets["Consolidados"] if r["idacordao"] == doc]
+        by_type = {}
+        for kind in ("NER", "SEG"):
+            oo = [r for r in original_docs if r["tipo"] == kind]
+            nn = [r for r in new_docs if r["tipo"] == kind]
+            cc = [r for r in consolidated_docs if r["tipo"] == kind]
+            by_type.update({
+                f"originais_{kind}": len(oo),
+                f"consolidados_originais_{kind}": sum(r["status"].startswith("CONCORDANCIA_") for r in cc),
+                f"consolidados_novos_{kind}": sum(r["status"] == "CONSOLIDADA_NOVA" for r in cc),
+                f"pendentes_originais_{kind}": sum(not r["status"].startswith("CONCORDANCIA_") for r in oo),
+                f"divergencia_checkbox_{kind}": sum(r["status"] == "DIVERGENCIA_CHECKBOX" for r in oo),
+                f"propostas_novas_{kind}": len(nn),
+                f"propostas_novas_pendentes_{kind}": sum(r["status"] == "PENDENTE_NOVA" for r in nn),
+            })
+        sheets["Por_acordao"].append({**by_type,
             "idacordao": doc, "originais": len(base),
             "concordancia_original": perdoc["CONCORDANCIA_ORIGINAL"],
             "concordancia_alteracao": perdoc["CONCORDANCIA_ALTERACAO"],
@@ -314,10 +344,24 @@ def audit(original, evaluation_11, evaluation_17):
             not r["avaliacao_completa"] for r in sheets["Por_acordao"])}
     hashes = {key: hashlib.sha256(path.read_bytes()).hexdigest()
               for key, path in paths.items()}
+    for kind in ("NER", "SEG"):
+        original_rows = [r for r in sheets["Revisao_originais"] if r["tipo"] == kind]
+        consolidated_rows = [r for r in sheets["Consolidados"] if r["tipo"] == kind]
+        new_rows = [r for r in sheets["Revisao_novas"] if r["tipo"] == kind]
+        metrics.update({
+            f"{kind}_originais": len(original_rows),
+            f"{kind}_originais_consolidados": sum(r["status"].startswith("CONCORDANCIA_") for r in consolidated_rows),
+            f"{kind}_novas_consolidadas": sum(r["status"] == "CONSOLIDADA_NOVA" for r in consolidated_rows),
+            f"{kind}_consolidados_totais": len(consolidated_rows),
+            f"{kind}_originais_pendentes": sum(not r["status"].startswith("CONCORDANCIA_") for r in original_rows),
+            f"{kind}_divergencias_checkbox": sum(r["status"] == "DIVERGENCIA_CHECKBOX" for r in original_rows),
+            f"{kind}_novas_propostas_individuais": len(new_rows),
+            f"{kind}_novas_propostas_pendentes": sum(r["status"] == "PENDENTE_NOVA" for r in new_rows),
+        })
     sheets["Resumo"] = [{"metrica": key, "quantidade": value}
                         for key, value in metrics.items()]
     sheets["Motivos_pendencia"] = [
-        {"motivo": key, "quantidade": value} for key, value in sorted(reasons.items())]
+        {"motivo": key, "descricao": MOTIVO_DESCRICOES.get(key, "Motivo não catalogado: verificar regra de auditoria."), "quantidade": value} for key, value in sorted(reasons.items())]
     notes = [
         ("Original", "Imutável; nunca substituir label/start/end originais."),
         ("Ordem", "Original, depois todas as colunas do projeto 11 e do projeto 17."),
@@ -329,6 +373,8 @@ def audit(original, evaluation_11, evaluation_17):
         ("Substituição", "completed_by=10 e updated_by=3 com choices: nome substituição."),
         ("Teresa", "Ainda não substituída: nenhuma aprovação inferida."),
         ("Interpretação", "Concordância estrutural, não Cohen Kappa nem gold."),
+        ("Tipos", "NER corresponde a labels ENT_; SEG corresponde a labels SEG_. Contagens por tipo em Resumo e Por_acordao."),
+        ("Motivos", "Motivos_pendencia apresenta descrição explicativa por motivo."),
         *[(f"SHA256_{key}", value) for key, value in hashes.items()]]
     sheets["Instrucoes"] = [{"campo_regra": k, "descricao": v} for k, v in notes]
     return sheets, metrics, hashes
