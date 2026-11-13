@@ -159,7 +159,6 @@ def audit(original, evaluation_11, evaluation_17):
                     prefix + "start": region["start"] if region else "",
                     prefix + "end": region["end"] if region else "",
                     prefix + "decisao": d[p],
-                    prefix + "checkbox_original": review[p][1].get(rid) or "",
                     prefix + "observacao": review[p][2].get(rid) or ""})
             row.update({"status": status, "motivo": reason})
             sheets["Revisao_originais"].append(row)
@@ -170,46 +169,47 @@ def audit(original, evaluation_11, evaluation_17):
                     "end_proposta_concordante": r["11"]["end"]})
             elif status == "DIVERGENCIA_CHECKBOX":
                 sheets["Divergencia_checkbox"].append(row.copy())
-        groups = defaultdict(lambda: {"11": [], "17": []})
+        # Each new region is an independent manual proposal by ONE reviewer.
+        # Equal geometry across projects is diagnostic and never merges IDs.
         for p in ("11", "17"):
-            for rid, span in review[p][0].items():
-                if rid not in base:
-                    groups[geometry(span)][p].append(rid)
-        for geom, group in sorted(groups.items()):
-            reason = ("nova_aguardando_substituicao" if not complete else
-                      "nova_coincidente_pendente" if group["11"] and group["17"]
-                      else "nova_unilateral_pendente")
-            reasons[reason] += 1
-            perdoc["NOVAS_PENDENTES"] += 1
-            row = {
-                "idacordao": doc, "region_id_original": "",
-                "anotador_original_id": oid, "anotador_original_nome": oname,
-                "label_original": "", "start_original": "", "end_original": "",
-                "label_proposta": geom[0], "start_proposto": geom[1],
-                "end_proposto": geom[2],
-                "tipo": "NER" if geom[0].startswith("ENT_") else
-                        "SEG" if geom[0].startswith("SEG_") else "UNKNOWN"}
-            for p in ("11", "17"):
-                prefix = "projeto_" + p + "_"
-                ids = sorted(group[p])
-                row.update({
-                    prefix + "avaliador_id": people[p][0],
-                    prefix + "avaliador_nome": people[p][1],
-                    prefix + "task_id": sources[p][doc]["id"],
-                    prefix + "region_ids": ";".join(ids),
-                    prefix + "label": geom[0] if ids else "",
-                    prefix + "start": geom[1] if ids else "",
-                    prefix + "end": geom[2] if ids else "",
-                    prefix + "decisao": "nova_regiao" if ids else "nao_avaliada",
-                    prefix + "checkbox_original": ";".join(
-                        str(review[p][1].get(rid) or "") for rid in ids),
-                    prefix + "observacao": " | ".join(
-                        review[p][2].get(rid) or "" for rid in ids).strip(" |")})
-            row.update({
-                "mesma_geometria_original_ids":
-                    ";".join(sorted(original_geometries.get(geom, []))),
-                "status": "PENDENTE_NOVA", "motivo": reason, "adjudicada": False})
-            sheets["Revisao_novas"].append(row)
+            for rid, span in sorted(review[p][0].items(),
+                                    key=lambda item: (item[1]["start"], item[0])):
+                if rid in base:
+                    continue
+                geom = geometry(span)
+                other_p = "17" if p == "11" else "11"
+                same_in_other = sorted(
+                    other_id for other_id, other_span in review[other_p][0].items()
+                    if other_id not in base and geometry(other_span) == geom)
+                reason = ("nova_aguardando_substituicao" if not complete else
+                          "nova_coincidente_pendente" if same_in_other else
+                          "nova_unilateral_pendente")
+                reasons[reason] += 1
+                perdoc["NOVAS_PENDENTES"] += 1
+                sheets["Revisao_novas"].append({
+                    "idacordao": doc,
+                    "anotador_original_id": oid,
+                    "anotador_original_nome": oname,
+                    "projeto_avaliacao": int(p),
+                    "avaliador_id": people[p][0],
+                    "avaliador_nome": people[p][1],
+                    "task_id_avaliacao": sources[p][doc]["id"],
+                    "region_id_nova": rid,
+                    "tipo": ("NER" if geom[0].startswith("ENT_") else
+                             "SEG" if geom[0].startswith("SEG_") else "UNKNOWN"),
+                    "label": span["label"],
+                    "start": span["start"],
+                    "end": span["end"],
+                    "texto": span["text"],
+                    "decisao": "nova_regiao",
+                    "observacao": review[p][2].get(rid) or "",
+                    "mesma_geometria_outro_projeto_ids": ";".join(same_in_other),
+                    "mesma_geometria_original_ids":
+                        ";".join(sorted(original_geometries.get(geom, []))),
+                    "status": "PENDENTE_NOVA",
+                    "motivo": reason,
+                    "adjudicada": False,
+                })
         sheets["Por_acordao"].append({
             "idacordao": doc, "originais": len(base),
             "concordancia_original": perdoc["CONCORDANCIA_ORIGINAL"],
@@ -229,7 +229,7 @@ def audit(original, evaluation_11, evaluation_17):
         "originais_pendentes": len(sheets["Revisao_originais"]) - len(sheets["Consolidados"]),
         "novas_candidatas": len(sheets["Revisao_novas"]),
         "novas_coincidentes": sum(
-            bool(r["projeto_11_region_ids"] and r["projeto_17_region_ids"])
+            bool(r["mesma_geometria_outro_projeto_ids"])
             for r in sheets["Revisao_novas"]),
         "pendencias_totais": len(sheets["Revisao_originais"]) -
                              len(sheets["Consolidados"]) + len(sheets["Revisao_novas"]),
@@ -246,8 +246,8 @@ def audit(original, evaluation_11, evaluation_17):
         ("Ordem", "Original, depois todas as colunas do projeto 11 e do projeto 17."),
         ("Consolidados", "Geometria igual; decisões normalizadas não conflitantes."),
         ("Divergencia_checkbox", "Geometria igual, julgamento discordante; excluído de consolidados."),
-        ("Checkbox ausente", "Classificação determinística contra o original."),
-        ("Novas", "Regiões manuais: nova_regiao; não são gold automaticamente."),
+        ("Checkbox ausente", "Classificação determinística contra o original; a coluna decisao já registra o valor explícito ou automático."),
+        ("Novas", "Uma linha por região e avaliador; igualdade geométrica entre projetos só para diagnóstico. Não são gold."),
         ("Substituição", "completed_by=10 e updated_by=3 com choices: nome substituição."),
         ("Teresa", "Ainda não substituída: nenhuma aprovação inferida."),
         ("Interpretação", "Concordância estrutural, não Cohen Kappa nem gold."),
@@ -260,7 +260,7 @@ def columns(name, rows):
     if not rows:
         return ["sem_dados"]
     all_keys = list(rows[0])
-    if name not in {"Revisao_originais", "Revisao_novas", "Consolidados",
+    if name not in {"Revisao_originais", "Consolidados",
                     "Divergencia_checkbox"}:
         return all_keys
     p11 = [x for x in all_keys if x.startswith("projeto_11_")]
