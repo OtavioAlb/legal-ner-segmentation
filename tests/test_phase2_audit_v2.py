@@ -179,3 +179,20 @@ def test_evaluator_12_is_mariana(tmp_path):
     right = task(1, 5, [("a", "ENT_COMARCA", 0, 12, "Certo")])
     sheets, _, _ = audit(*files(tmp_path, original, left, right))
     assert sheets["Consolidados"][0]["projeto_11_avaliador_nome"] == "Mariana"
+
+
+def test_geometry_disagreement_has_own_sheet_without_double_count(tmp_path):
+    original = task(1, 8, [("a", "ENT_COMARCA", 0, 12, None),
+                           ("b", "SEG_EMENTA", 13, 30, None)])
+    left = task(1, 7, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                        ("b", "SEG_EMENTA", 13, 30, "Certo")])
+    right = task(1, 5, [("a", "ENT_PROCESSO", 0, 12, "Incorreto"),
+                         ("b", "SEG_EMENTA", 13, 30, "Incorreto")])
+    sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
+    assert len(sheets["Divergencia_geometria"]) == 1
+    assert sheets["Divergencia_geometria"][0]["region_id_original"] == "a"
+    assert len(sheets["Divergencia_checkbox"]) == 1
+    assert sheets["Divergencia_checkbox"][0]["region_id_original"] == "b"
+    assert metrics["isolados_geometria_divergente"] == 1
+    assert metrics["isolados_checkbox_divergente"] == 1
+    assert len(sheets["Consolidados"]) == 0
