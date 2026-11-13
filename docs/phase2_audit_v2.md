@@ -75,3 +75,12 @@ Contagens da rodada com os três JSONs (13/11/2026):
 - Seis acórdãos aguardando conclusão da substituição de Teresa.
 
 Para conferir: o número de novas consolidadas na aba `Consolidados` deve ser exatamente metade dos registros `CONSOLIDADA_NOVA` da aba `Revisao_novas`; os dois IDs originais e o ID canônico devem permitir junção sem perda de autoria.
+
+### Correções da classificação e da identidade de avaliadores
+
+- `CONCORDANCIA_ORIGINAL`: os dois revisores concordam com a anotação original em label, start e end, sem conflito de decisão.
+- `CONCORDANCIA_AVALIACAO`: as duas revisões concordam entre si na mesma alteração de label/start/end, diferente da anotação original; mantém o original imutável.
+- `CONSOLIDADA_NOVA`: região proposta uma vez por projeto, com geometria idêntica e IDs originais dos dois revisores preservados.
+- Nos JSONs analisados, o usuário de avaliação ID `12` corresponde a **Mariana**, não Maria, confirmado pelo cruzamento dos acórdãos e distribuição de avaliadores. O ID `4` também corresponde a Mariana no projeto original.
+
+A alteração de nomenclatura e do cadastro de nomes não altera as contagens totais: 1.056 `CONCORDANCIA_ORIGINAL`, 2 `CONCORDANCIA_AVALIACAO` e 67 `CONSOLIDADA_NOVA` (1.125 consolidados).
