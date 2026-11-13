@@ -43,3 +43,10 @@ Os caminhos de entrada devem ser ajustados à posição real dos JSONs no comput
 - Seis acórdãos aguardam substituição da avaliação de Teresa.
 
 Recontar diretamente com este código e as entradas mais recentes; nunca ajustar os resultados para corresponder à rodada de referência.
+
+### Ajustes de apresentação de 13/11/2026
+
+- A coluna redundante `projeto_11_checkbox_original` / `projeto_17_checkbox_original` foi retirada. Os valores explícitos e inferidos permanecem nas colunas `projeto_*_decisao`.
+- A aba `Revisao_novas` agora tem **uma linha por ID de região nova e avaliador**, com `projeto_avaliacao`, `avaliador_id`, `avaliador_nome`, `region_id_nova`, `label`, `start`, `end`, `decisao` e `observacao`. Quando outro projeto propõe geometria idêntica, os IDs aparecem em `mesma_geometria_outro_projeto_ids`, sem confundir autoria.
+- Na exportação de referência, há **635 registros individuais de novas regiões** contra **556 grupos geométricos distintos** na versão anterior. Há 134 registros individuais que têm correspondência geométrica no outro projeto; esses 134 registros não equivalem a 134 grupos distintos (67 grupos tinham propostas dos dois projetos). Os 1.058 consolidados originais e 121 conflitos de checkbox não mudaram.
+- O total `pendencias_totais` na aba Resumo agora soma **registros individuais**, não grupos: 384 originais + 635 novas regiões = 1.019. Não comparar diretamente às 940 pendências da versão com novas agrupadas.
