@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 SHEETS = ("Resumo", "Motivos_pendencia", "Revisao_originais", "Revisao_novas",
-          "Consolidados", "Divergencia_checkbox", "Duplicatas_exatas",
+          "Consolidados", "Divergencia_checkbox", "Divergencia_geometria", "Duplicatas_exatas",
           "Por_acordao", "Instrucoes")
 NAMES = {"3": "Tiago", "4": "Mariana", "5": "Guilherme", "7": "Letícia",
          "8": "Emily", "9": "Giulia", "10": "Teresa", "12": "Mariana"}
@@ -181,6 +181,8 @@ def audit(original, evaluation_11, evaluation_17):
                     "end_proposta_concordante": r["11"]["end"]})
             elif status == "DIVERGENCIA_CHECKBOX":
                 sheets["Divergencia_checkbox"].append(row.copy())
+            elif status == "PENDENTE_GEOMETRIA":
+                sheets["Divergencia_geometria"].append(row.copy())
         # Canonical ID is derived from (document, label, start, end) and never
         # replaces either reviewer source ID.
         new_groups = {}
@@ -327,6 +329,7 @@ def audit(original, evaluation_11, evaluation_17):
         "concordancia_avaliacao": counts["CONCORDANCIA_AVALIACAO"],
         "consolidados_estruturais_sem_conflito_checkbox": counts["CONCORDANCIA_ORIGINAL"] + counts["CONCORDANCIA_AVALIACAO"],
         "isolados_checkbox_divergente": len(sheets["Divergencia_checkbox"]),
+        "isolados_geometria_divergente": len(sheets["Divergencia_geometria"]),
         "originais_pendentes": len(sheets["Revisao_originais"]) -
                               counts["CONCORDANCIA_ORIGINAL"] - counts["CONCORDANCIA_AVALIACAO"],
         "novas_candidatas": len(sheets["Revisao_novas"]),
@@ -367,6 +370,7 @@ def audit(original, evaluation_11, evaluation_17):
         ("Ordem", "Original, depois todas as colunas do projeto 11 e do projeto 17."),
         ("Consolidados", "CONCORDANCIA_ORIGINAL: igual ao original; CONCORDANCIA_AVALIACAO: avaliadores concordam na alteração; CONSOLIDADA_NOVA: duas propostas novas idênticas."),
         ("Divergencia_checkbox", "Geometria igual, julgamento discordante; excluído de consolidados."),
+        ("Divergencia_geometria", "Região original ausente em uma avaliação ou com label/start/end diferentes nos projetos 11 e 17. Não duplicar contagens."),
         ("Checkbox ausente", "Classificação determinística contra o original; a coluna decisao já registra o valor explícito ou automático."),
         ("Novas", "Uma linha por proposta e avaliador; o ID canônico vincula os dois IDs de origem."),
         ("Consolidacao_novas", "Exige 1 proposta por projeto, avaliadores distintos, substituição concluída e ausência de geometria idêntica no original."),
@@ -386,7 +390,7 @@ def columns(name, rows):
         return ["sem_dados"]
     all_keys = list(rows[0])
     if name not in {"Revisao_originais", "Consolidados",
-                    "Divergencia_checkbox"}:
+                    "Divergencia_checkbox", "Divergencia_geometria"}:
         return all_keys
     p11 = [x for x in all_keys if x.startswith("projeto_11_")]
     p17 = [x for x in all_keys if x.startswith("projeto_17_")]
