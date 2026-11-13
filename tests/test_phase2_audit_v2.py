@@ -71,7 +71,13 @@ def test_new_region_manual_even_if_no_checkbox(tmp_path):
     assert len(sheets["Revisao_novas"]) == 2
     assert {row["decisao"] for row in sheets["Revisao_novas"]} == {"nova_regiao"}
     assert {row["projeto_avaliacao"] for row in sheets["Revisao_novas"]} == {11, 17}
-    assert len(sheets["Consolidados"]) == 1
+    assert len(sheets["Consolidados"]) == 2
+    new = next(row for row in sheets["Consolidados"] if row["status"] == "CONSOLIDADA_NOVA")
+    assert new["projeto_11_region_id"] == "new_11"
+    assert new["projeto_17_region_id"] == "new_17"
+    assert new["canonical_region_id"].startswith("new_")
+    assert {row["canonical_region_id"] for row in sheets["Revisao_novas"]} == {new["canonical_region_id"]}
+    assert metrics["novas_consolidadas"] == 1
 
 
 def test_tiago_replacement_name_and_order(tmp_path):
@@ -108,3 +114,43 @@ def test_no_redundant_raw_checkbox_and_new_region_has_one_evaluator(tmp_path):
     assert proposal["region_id_nova"] == "new_11"
     assert not any(key.startswith("projeto_11_") or key.startswith("projeto_17_") for key in proposal)
     assert metrics["isolados_checkbox_divergente"] == 1
+
+
+def test_duplicate_new_proposal_same_project_blocks_consolidation(tmp_path):
+    original = task(1, 8, [("a", "ENT_COMARCA", 0, 12, None)])
+    left = task(1, 7, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                        ("x", "SEG_EMENTA", 20, 35, None),
+                        ("x2", "SEG_EMENTA", 20, 35, None)])
+    right = task(1, 5, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                         ("y", "SEG_EMENTA", 20, 35, None)])
+    sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
+    assert metrics["novas_consolidadas"] == 0
+    assert len(sheets["Consolidados"]) == 1
+    assert all(row["status"] == "PENDENTE_NOVA" for row in sheets["Revisao_novas"])
+
+
+def test_new_proposal_existing_in_original_is_not_consolidated(tmp_path):
+    original = task(1, 8, [("a", "ENT_COMARCA", 0, 12, None)])
+    left = task(1, 7, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                        ("new1", "ENT_COMARCA", 0, 12, None)])
+    right = task(1, 5, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                         ("new2", "ENT_COMARCA", 0, 12, None)])
+    sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
+    assert metrics["novas_consolidadas"] == 0
+    assert all(row["motivo"] == "nova_duplicada_do_original" for row in sheets["Revisao_novas"])
+
+
+def test_canonical_id_stable_under_new_region_id_change(tmp_path):
+    base = task(1, 8, [("a", "ENT_COMARCA", 0, 12, None)])
+    def run(left_id, right_id):
+        left = task(1, 7, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                            (left_id, "SEG_EMENTA", 20, 35, None)])
+        right = task(1, 5, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                             (right_id, "SEG_EMENTA", 20, 35, None)])
+        sheets, _, _ = audit(*files(tmp_path, base, left, right))
+        return next(row for row in sheets["Consolidados"]
+                    if row["status"] == "CONSOLIDADA_NOVA")
+    one, two = run("first", "second"), run("changed", "different")
+    assert one["canonical_region_id"] == two["canonical_region_id"]
+    assert one["projeto_11_region_id"] != two["projeto_11_region_id"]
+    assert one["projeto_17_region_id"] != two["projeto_17_region_id"]
