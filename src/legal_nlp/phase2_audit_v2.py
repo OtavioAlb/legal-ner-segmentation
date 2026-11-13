@@ -273,30 +273,29 @@ def columns(name, rows):
 
 
 def write(sheets, output):
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.utils import get_column_letter
+    """Write a single workbook with the nine audit worksheets."""
+    from artifact_tool import Workbook, SpreadsheetFile
 
-    wb = Workbook()
-    for index, name in enumerate(SHEETS):
-        sh = wb.active if index == 0 else wb.create_sheet()
-        sh.title = name
+    workbook = Workbook.create()
+    for name in SHEETS:
+        sh = workbook.worksheets.add(name)
         rows, keys = sheets[name], columns(name, sheets[name])
-        sh.append(keys)
-        for row in rows:
-            sh.append([row.get(key, "") for key in keys])
-        sh.freeze_panes = "A2"
-        sh.auto_filter.ref = sh.dimensions
-        for cell in sh[1]:
-            cell.fill = PatternFill("solid", fgColor="17365D")
-            cell.font = Font(color="FFFFFF", bold=True)
-            cell.alignment = Alignment(wrap_text=True)
-        sh.row_dimensions[1].height = 32
-        for col, key in enumerate(keys, 1):
+        sh.get_range_by_indexes(0, 0, 1, len(keys)).values = [keys]
+        for offset in range(0, len(rows), 120):
+            chunk = rows[offset:offset + 120]
+            matrix = [[row.get(key, "") if row.get(key) is not None else ""
+                       for key in keys] for row in chunk]
+            sh.get_range_by_indexes(offset + 1, 0, len(chunk), len(keys)).values = matrix
+        sh.get_range_by_indexes(0, 0, 1, len(keys)).format = {
+            "fill": "#17365D",
+            "font": {"bold": True, "color": "#FFFFFF"},
+            "row_height": 32, "wrap_text": True}
+        sh.freeze_panes.freeze_rows(1)
+        for index, key in enumerate(keys):
             width = (38 if any(z in key for z in ("observacao", "texto", "descricao"))
                      else 24 if "nome" in key or "decisao" in key else 19)
-            sh.column_dimensions[get_column_letter(col)].width = width
-    wb.save(output)
+            sh.get_range_by_indexes(0, index, 1, 1).format.column_width = width
+    SpreadsheetFile.export_xlsx(workbook).save(str(output))
 
 
 def main():
