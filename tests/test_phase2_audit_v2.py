@@ -196,3 +196,22 @@ def test_geometry_disagreement_has_own_sheet_without_double_count(tmp_path):
     assert metrics["isolados_geometria_divergente"] == 1
     assert metrics["isolados_checkbox_divergente"] == 1
     assert len(sheets["Consolidados"]) == 0
+
+
+def test_distribution_per_label_reconciles_consolidated_and_pending(tmp_path):
+    original = task(1, 8, [("a", "SEG_FUNDAMENTO_DECISAO", 0, 12, None),
+                           ("b", "ENT_CLASSE", 15, 25, None)])
+    left = task(1, 7, [("a", "ENT_NORMA_ARTIGO", 0, 12, "Incorreto"),
+                        ("b", "ENT_CLASSE", 15, 25, "Certo"),
+                        ("new_11", "ENT_PROCESSO", 27, 39, None)])
+    right = task(1, 5, [("a", "ENT_NORMA_ARTIGO", 0, 12, "Incorreto"),
+                         ("b", "ENT_CLASSE", 15, 25, "Certo"),
+                         ("new_17", "ENT_PROCESSO", 27, 39, None)])
+    sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
+    distribution = {r["label"]: r for r in sheets["Distribuicao_labels"]}
+    assert distribution["SEG_FUNDAMENTO_DECISAO"]["originais_consolidadas"] == 1
+    assert distribution["SEG_FUNDAMENTO_DECISAO"]["consolidadas_label_final"] == 0
+    assert distribution["ENT_NORMA_ARTIGO"]["consolidadas_label_final"] == 1
+    assert distribution["ENT_PROCESSO"]["novas_consolidadas"] == 1
+    assert sum(r["consolidadas_total_por_label_origem"] for r in distribution.values()) == metrics["consolidados_totais"]
+    assert sum(r["nao_consolidadas_total"] for r in distribution.values()) == metrics["pendencias_totais"]
