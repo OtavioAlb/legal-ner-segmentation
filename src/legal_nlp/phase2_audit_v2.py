@@ -14,7 +14,7 @@ SHEETS = ("Resumo", "Motivos_pendencia", "Revisao_originais", "Revisao_novas",
           "Consolidados", "Divergencia_checkbox", "Duplicatas_exatas",
           "Por_acordao", "Instrucoes")
 NAMES = {"3": "Tiago", "4": "Mariana", "5": "Guilherme", "7": "Letícia",
-         "8": "Emily", "9": "Giulia", "10": "Teresa", "12": "Maria"}
+         "8": "Emily", "9": "Giulia", "10": "Teresa", "12": "Mariana"}
 MOTIVO_DESCRICOES = {
     "aguardando_substituicao": "Região original em acórdão cuja avaliação atribuída a Teresa ainda não foi substituída; não há dois pareceres elegíveis.",
     "ausencia_ou_divergencia_geometria": "Uma avaliação não contém o ID da região original ou as duas avaliações divergem em label, start ou end.",
@@ -148,7 +148,7 @@ def audit(original, evaluation_11, evaluation_17):
             elif geometry(old) == geometry(r["11"]):
                 status, reason = "CONCORDANCIA_ORIGINAL", ""
             else:
-                status, reason = "CONCORDANCIA_ALTERACAO", ""
+                status, reason = "CONCORDANCIA_AVALIACAO", ""
             counts[status] += 1
             perdoc[status] += 1
             if reason:
@@ -313,10 +313,10 @@ def audit(original, evaluation_11, evaluation_17):
         sheets["Por_acordao"].append({**by_type,
             "idacordao": doc, "originais": len(base),
             "concordancia_original": perdoc["CONCORDANCIA_ORIGINAL"],
-            "concordancia_alteracao": perdoc["CONCORDANCIA_ALTERACAO"],
+            "concordancia_avaliacao": perdoc["CONCORDANCIA_AVALIACAO"],
             "divergencia_checkbox": perdoc["DIVERGENCIA_CHECKBOX"],
             "pendentes_originais": len(base) - perdoc["CONCORDANCIA_ORIGINAL"]
-                                  - perdoc["CONCORDANCIA_ALTERACAO"],
+                                  - perdoc["CONCORDANCIA_AVALIACAO"],
             "novas_consolidadas": perdoc["CONSOLIDADA_NOVA"],
             "novas_pendentes": perdoc["NOVAS_PENDENTES"],
             "avaliacao_completa": complete})
@@ -324,11 +324,11 @@ def audit(original, evaluation_11, evaluation_17):
         "acordaos": len(originals),
         "originais": len(sheets["Revisao_originais"]),
         "concordancia_original": counts["CONCORDANCIA_ORIGINAL"],
-        "concordancia_alteracao": counts["CONCORDANCIA_ALTERACAO"],
-        "consolidados_estruturais_sem_conflito_checkbox": counts["CONCORDANCIA_ORIGINAL"] + counts["CONCORDANCIA_ALTERACAO"],
+        "concordancia_avaliacao": counts["CONCORDANCIA_AVALIACAO"],
+        "consolidados_estruturais_sem_conflito_checkbox": counts["CONCORDANCIA_ORIGINAL"] + counts["CONCORDANCIA_AVALIACAO"],
         "isolados_checkbox_divergente": len(sheets["Divergencia_checkbox"]),
         "originais_pendentes": len(sheets["Revisao_originais"]) -
-                              counts["CONCORDANCIA_ORIGINAL"] - counts["CONCORDANCIA_ALTERACAO"],
+                              counts["CONCORDANCIA_ORIGINAL"] - counts["CONCORDANCIA_AVALIACAO"],
         "novas_candidatas": len(sheets["Revisao_novas"]),
         "novas_consolidadas": counts["CONSOLIDADA_NOVA"],
         "consolidados_totais": len(sheets["Consolidados"]),
@@ -338,7 +338,7 @@ def audit(original, evaluation_11, evaluation_17):
             for r in sheets["Revisao_novas"]),
         "pendencias_totais": len(sheets["Revisao_originais"]) -
                              counts["CONCORDANCIA_ORIGINAL"] -
-                             counts["CONCORDANCIA_ALTERACAO"] +
+                             counts["CONCORDANCIA_AVALIACAO"] +
                              sum(r["status"] == "PENDENTE_NOVA" for r in sheets["Revisao_novas"]),
         "acordaos_aguardando_substituicao": sum(
             not r["avaliacao_completa"] for r in sheets["Por_acordao"])}
@@ -365,7 +365,7 @@ def audit(original, evaluation_11, evaluation_17):
     notes = [
         ("Original", "Imutável; nunca substituir label/start/end originais."),
         ("Ordem", "Original, depois todas as colunas do projeto 11 e do projeto 17."),
-        ("Consolidados", "Geometria igual; decisões normalizadas não conflitantes."),
+        ("Consolidados", "CONCORDANCIA_ORIGINAL: igual ao original; CONCORDANCIA_AVALIACAO: avaliadores concordam na alteração; CONSOLIDADA_NOVA: duas propostas novas idênticas."),
         ("Divergencia_checkbox", "Geometria igual, julgamento discordante; excluído de consolidados."),
         ("Checkbox ausente", "Classificação determinística contra o original; a coluna decisao já registra o valor explícito ou automático."),
         ("Novas", "Uma linha por proposta e avaliador; o ID canônico vincula os dois IDs de origem."),
@@ -375,6 +375,7 @@ def audit(original, evaluation_11, evaluation_17):
         ("Interpretação", "Concordância estrutural, não Cohen Kappa nem gold."),
         ("Tipos", "NER corresponde a labels ENT_; SEG corresponde a labels SEG_. Contagens por tipo em Resumo e Por_acordao."),
         ("Motivos", "Motivos_pendencia apresenta descrição explicativa por motivo."),
+        ("Identidades", "O ID 12 corresponde a Mariana nos projetos de avaliação, conforme distribuição dos acórdãos; ID 4 também corresponde a Mariana no projeto de anotações originais."),
         *[(f"SHA256_{key}", value) for key, value in hashes.items()]]
     sheets["Instrucoes"] = [{"campo_regra": k, "descricao": v} for k, v in notes]
     return sheets, metrics, hashes
