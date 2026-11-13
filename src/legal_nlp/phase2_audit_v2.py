@@ -169,6 +169,59 @@ def audit(original, evaluation_11, evaluation_17):
                     "end_proposta_concordante": r["11"]["end"]})
             elif status == "DIVERGENCIA_CHECKBOX":
                 sheets["Divergencia_checkbox"].append(row.copy())
+        # Canonical ID is derived from (document, label, start, end) and never
+        # replaces either reviewer source ID.
+        new_groups = {}
+        for p in ("11", "17"):
+            groups = defaultdict(list)
+            for rid, span in review[p][0].items():
+                if rid not in base:
+                    groups[geometry(span)].append(rid)
+            new_groups[p] = groups
+        consolidated_new = set()
+        for geom in sorted(set(new_groups["11"]) & set(new_groups["17"])):
+            ids11, ids17 = sorted(new_groups["11"][geom]), sorted(new_groups["17"][geom])
+            if (not complete or len(ids11) != 1 or len(ids17) != 1
+                    or original_geometries.get(geom)
+                    or people["11"][0] == people["17"][0]):
+                continue
+            canonical = "new_" + hashlib.sha256(json.dumps(
+                [doc, *geom], ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")).hexdigest()[:20]
+            row = {
+                "idacordao": doc, "region_id_original": "",
+                "anotador_original_id": oid, "anotador_original_nome": oname,
+                "label_original": "", "start_original": "", "end_original": "",
+                "texto_original": "", "tipo": (
+                    "NER" if geom[0].startswith("ENT_") else
+                    "SEG" if geom[0].startswith("SEG_") else "UNKNOWN"),
+            }
+            for p, rid in (("11", ids11[0]), ("17", ids17[0])):
+                prefix, span = "projeto_" + p + "_", review[p][0][rid]
+                row.update({
+                    prefix + "avaliador_id": people[p][0],
+                    prefix + "avaliador_nome": people[p][1],
+                    prefix + "task_id": sources[p][doc]["id"],
+                    prefix + "region_id": rid,
+                    prefix + "label": span["label"],
+                    prefix + "start": span["start"],
+                    prefix + "end": span["end"],
+                    prefix + "decisao": "nova_regiao",
+                    prefix + "observacao": review[p][2].get(rid) or "",
+                })
+            row.update({
+                "status": "CONSOLIDADA_NOVA", "motivo": "",
+                "canonical_region_id": canonical,
+                "region_id_original_projeto_11": ids11[0],
+                "region_id_original_projeto_17": ids17[0],
+                "label_proposta_concordante": geom[0],
+                "start_proposta_concordante": geom[1],
+                "end_proposta_concordante": geom[2],
+            })
+            sheets["Consolidados"].append(row)
+            consolidated_new.add(geom)
+            counts["CONSOLIDADA_NOVA"] += 1
+            perdoc["CONSOLIDADA_NOVA"] += 1
         # Each new region is an independent manual proposal by ONE reviewer.
         # Equal geometry across projects is diagnostic and never merges IDs.
         for p in ("11", "17"):
@@ -181,11 +234,28 @@ def audit(original, evaluation_11, evaluation_17):
                 same_in_other = sorted(
                     other_id for other_id, other_span in review[other_p][0].items()
                     if other_id not in base and geometry(other_span) == geom)
-                reason = ("nova_aguardando_substituicao" if not complete else
-                          "nova_coincidente_pendente" if same_in_other else
-                          "nova_unilateral_pendente")
-                reasons[reason] += 1
-                perdoc["NOVAS_PENDENTES"] += 1
+                if geom in consolidated_new:
+                    status, reason = "CONSOLIDADA_NOVA", ""
+                elif not complete:
+                    status, reason = "PENDENTE_NOVA", "nova_aguardando_substituicao"
+                elif same_in_other and (
+                        len(new_groups[p][geom]) != 1 or
+                        len(new_groups[other_p][geom]) != 1):
+                    status, reason = "PENDENTE_NOVA", "nova_ambigua_ids_duplicados"
+                elif same_in_other and original_geometries.get(geom):
+                    status, reason = "PENDENTE_NOVA", "nova_duplicada_do_original"
+                elif same_in_other and people[p][0] == people[other_p][0]:
+                    status, reason = "PENDENTE_NOVA", "nova_sem_avaliadores_distintos"
+                elif same_in_other:
+                    status, reason = "PENDENTE_NOVA", "nova_coincidente_pendente"
+                else:
+                    status, reason = "PENDENTE_NOVA", "nova_unilateral_pendente"
+                if reason:
+                    reasons[reason] += 1
+                    perdoc["NOVAS_PENDENTES"] += 1
+                canonical = ("new_" + hashlib.sha256(json.dumps(
+                    [doc, *geom], ensure_ascii=False, separators=(",", ":")
+                ).encode("utf-8")).hexdigest()[:20]) if geom in consolidated_new else ""
                 sheets["Revisao_novas"].append({
                     "idacordao": doc,
                     "anotador_original_id": oid,
@@ -217,6 +287,7 @@ def audit(original, evaluation_11, evaluation_17):
             "divergencia_checkbox": perdoc["DIVERGENCIA_CHECKBOX"],
             "pendentes_originais": len(base) - perdoc["CONCORDANCIA_ORIGINAL"]
                                   - perdoc["CONCORDANCIA_ALTERACAO"],
+            "novas_consolidadas": perdoc["CONSOLIDADA_NOVA"],
             "novas_pendentes": perdoc["NOVAS_PENDENTES"],
             "avaliacao_completa": complete})
     metrics = {
@@ -224,15 +295,21 @@ def audit(original, evaluation_11, evaluation_17):
         "originais": len(sheets["Revisao_originais"]),
         "concordancia_original": counts["CONCORDANCIA_ORIGINAL"],
         "concordancia_alteracao": counts["CONCORDANCIA_ALTERACAO"],
-        "consolidados_estruturais_sem_conflito_checkbox": len(sheets["Consolidados"]),
+        "consolidados_estruturais_sem_conflito_checkbox": counts["CONCORDANCIA_ORIGINAL"] + counts["CONCORDANCIA_ALTERACAO"],
         "isolados_checkbox_divergente": len(sheets["Divergencia_checkbox"]),
-        "originais_pendentes": len(sheets["Revisao_originais"]) - len(sheets["Consolidados"]),
+        "originais_pendentes": len(sheets["Revisao_originais"]) -
+                              counts["CONCORDANCIA_ORIGINAL"] - counts["CONCORDANCIA_ALTERACAO"],
         "novas_candidatas": len(sheets["Revisao_novas"]),
+        "novas_consolidadas": counts["CONSOLIDADA_NOVA"],
+        "consolidados_totais": len(sheets["Consolidados"]),
+        "novas_pendentes": sum(r["status"] == "PENDENTE_NOVA" for r in sheets["Revisao_novas"]),
         "novas_coincidentes": sum(
             bool(r["mesma_geometria_outro_projeto_ids"])
             for r in sheets["Revisao_novas"]),
         "pendencias_totais": len(sheets["Revisao_originais"]) -
-                             len(sheets["Consolidados"]) + len(sheets["Revisao_novas"]),
+                             counts["CONCORDANCIA_ORIGINAL"] -
+                             counts["CONCORDANCIA_ALTERACAO"] +
+                             sum(r["status"] == "PENDENTE_NOVA" for r in sheets["Revisao_novas"]),
         "acordaos_aguardando_substituicao": sum(
             not r["avaliacao_completa"] for r in sheets["Por_acordao"])}
     hashes = {key: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -247,7 +324,8 @@ def audit(original, evaluation_11, evaluation_17):
         ("Consolidados", "Geometria igual; decisões normalizadas não conflitantes."),
         ("Divergencia_checkbox", "Geometria igual, julgamento discordante; excluído de consolidados."),
         ("Checkbox ausente", "Classificação determinística contra o original; a coluna decisao já registra o valor explícito ou automático."),
-        ("Novas", "Uma linha por região e avaliador; igualdade geométrica entre projetos só para diagnóstico. Não são gold."),
+        ("Novas", "Uma linha por proposta e avaliador; o ID canônico vincula os dois IDs de origem."),
+        ("Consolidacao_novas", "Exige 1 proposta por projeto, avaliadores distintos, substituição concluída e ausência de geometria idêntica no original."),
         ("Substituição", "completed_by=10 e updated_by=3 com choices: nome substituição."),
         ("Teresa", "Ainda não substituída: nenhuma aprovação inferida."),
         ("Interpretação", "Concordância estrutural, não Cohen Kappa nem gold."),
@@ -267,7 +345,8 @@ def columns(name, rows):
     p17 = [x for x in all_keys if x.startswith("projeto_17_")]
     tail = {"status", "motivo", "adjudicada", "mesma_geometria_original_ids",
             "label_proposta_concordante", "start_proposta_concordante",
-            "end_proposta_concordante"}
+            "end_proposta_concordante", "canonical_region_id",
+            "region_id_original_projeto_11", "region_id_original_projeto_17"}
     initial = [x for x in all_keys if not x.startswith("projeto_") and x not in tail]
     return initial + p11 + p17 + [x for x in all_keys if x not in initial + p11 + p17]
 
