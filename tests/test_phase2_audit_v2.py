@@ -68,8 +68,9 @@ def test_new_region_manual_even_if_no_checkbox(tmp_path):
                          ("new_17", "SEG_EMENTA", 20, 35, None)])
     sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
     assert metrics["novas_coincidentes"] == 1
-    assert len(sheets["Revisao_novas"]) == 1
-    assert sheets["Revisao_novas"][0]["projeto_11_decisao"] == "nova_regiao"
+    assert len(sheets["Revisao_novas"]) == 2
+    assert {row["decisao"] for row in sheets["Revisao_novas"]} == {"nova_regiao"}
+    assert {row["projeto_avaliacao"] for row in sheets["Revisao_novas"]} == {11, 17}
     assert len(sheets["Consolidados"]) == 1
 
 
@@ -91,3 +92,19 @@ def test_both_missing_choices_are_auto_classified():
     assert decision(old, {**old, "label": "ENT_PROCESSO"}, None) == "incorreto_automatico"
     assert decision(old, {**old, "end": 13}, None) == "limite_impreciso_automatico"
     assert decision(None, old, None) == "nova_regiao"
+
+
+def test_no_redundant_raw_checkbox_and_new_region_has_one_evaluator(tmp_path):
+    original = task(1, 8, [("a", "ENT_COMARCA", 0, 12, None)])
+    left = task(1, 7, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                        ("new_11", "SEG_EMENTA", 20, 35, None)])
+    right = task(1, 5, [("a", "ENT_COMARCA", 0, 12, "Incorreto")])
+    sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
+    columns_orig = columns("Divergencia_checkbox", sheets["Divergencia_checkbox"])
+    assert not any("checkbox_original" in key for key in columns_orig)
+    proposal = sheets["Revisao_novas"][0]
+    assert proposal["projeto_avaliacao"] == 11
+    assert proposal["avaliador_id"] == "7"
+    assert proposal["region_id_nova"] == "new_11"
+    assert not any(key.startswith("projeto_11_") or key.startswith("projeto_17_") for key in proposal)
+    assert metrics["isolados_checkbox_divergente"] == 1
