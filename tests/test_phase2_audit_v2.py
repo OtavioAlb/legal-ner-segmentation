@@ -44,7 +44,7 @@ def test_identical_reviewers_changes_stored_as_proposal(tmp_path):
     left = task(1, 7, [("a", "ENT_PROCESSO", 0, 12, "Incorreto")])
     right = task(1, 5, [("a", "ENT_PROCESSO", 0, 12, "Incorreto")])
     sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
-    assert metrics["concordancia_alteracao"] == 1
+    assert metrics["concordancia_avaliacao"] == 1
     row = sheets["Consolidados"][0]
     assert row["label_original"] == "ENT_COMARCA"
     assert row["label_proposta_concordante"] == "ENT_PROCESSO"
@@ -171,3 +171,11 @@ def test_reason_descriptions_and_type_breakdown(tmp_path):
     assert sheets["Motivos_pendencia"][0]["descricao"]
     assert sheets["Por_acordao"][0]["originais_NER"] == 1
     assert sheets["Por_acordao"][0]["originais_SEG"] == 1
+
+
+def test_evaluator_12_is_mariana(tmp_path):
+    original = task(1, 8, [("a", "ENT_COMARCA", 0, 12, None)])
+    left = task(1, 12, [("a", "ENT_COMARCA", 0, 12, "Certo")])
+    right = task(1, 5, [("a", "ENT_COMARCA", 0, 12, "Certo")])
+    sheets, _, _ = audit(*files(tmp_path, original, left, right))
+    assert sheets["Consolidados"][0]["projeto_11_avaliador_nome"] == "Mariana"
