@@ -154,3 +154,20 @@ def test_canonical_id_stable_under_new_region_id_change(tmp_path):
     assert one["canonical_region_id"] == two["canonical_region_id"]
     assert one["projeto_11_region_id"] != two["projeto_11_region_id"]
     assert one["projeto_17_region_id"] != two["projeto_17_region_id"]
+
+
+def test_reason_descriptions_and_type_breakdown(tmp_path):
+    original = task(1, 8, [("a", "ENT_COMARCA", 0, 12, None),
+                           ("b", "SEG_EMENTA", 15, 35, None)])
+    left = task(1, 7, [("a", "ENT_COMARCA", 0, 12, "Certo"),
+                        ("b", "SEG_EMENTA", 15, 35, "Certo")])
+    right = task(1, 5, [("a", "ENT_COMARCA", 0, 12, "Incorreto"),
+                         ("b", "SEG_EMENTA", 15, 35, "Certo")])
+    sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
+    assert metrics["NER_originais"] == metrics["SEG_originais"] == 1
+    assert metrics["NER_divergencias_checkbox"] == 1
+    assert metrics["SEG_consolidados_totais"] == 1
+    assert metrics["NER_consolidados_totais"] == 0
+    assert sheets["Motivos_pendencia"][0]["descricao"]
+    assert sheets["Por_acordao"][0]["originais_NER"] == 1
+    assert sheets["Por_acordao"][0]["originais_SEG"] == 1
