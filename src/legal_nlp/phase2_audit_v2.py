@@ -12,7 +12,7 @@ from pathlib import Path
 
 SHEETS = ("Resumo", "Motivos_pendencia", "Revisao_originais", "Revisao_novas",
           "Consolidados", "Divergencia_checkbox", "Divergencia_geometria", "Duplicatas_exatas",
-          "Por_acordao", "Instrucoes")
+          "Por_acordao", "Distribuicao_labels", "Instrucoes")
 NAMES = {"3": "Tiago", "4": "Mariana", "5": "Guilherme", "7": "Letícia",
          "8": "Emily", "9": "Giulia", "10": "Teresa", "12": "Mariana"}
 MOTIVO_DESCRICOES = {
@@ -361,6 +361,46 @@ def audit(original, evaluation_11, evaluation_17):
             f"{kind}_novas_propostas_individuais": len(new_rows),
             f"{kind}_novas_propostas_pendentes": sum(r["status"] == "PENDENTE_NOVA" for r in new_rows),
         })
+    # Per-label counts use original labels for original regions, retaining original
+    # semantics. Final labels are separately counted for corrected agreement cases.
+    label_counts = defaultdict(Counter)
+    for region in sheets["Revisao_originais"]:
+        count = label_counts[region["label_original"]]
+        count["originais_total"] += 1
+        field = ("originais_consolidadas" if region["status"].startswith("CONCORDANCIA_")
+                 else "originais_pendentes")
+        count[field] += 1
+    for region in sheets["Revisao_novas"]:
+        if region["status"] == "PENDENTE_NOVA":
+            label_counts[region["label"]]["novas_pendentes"] += 1
+    for region in sheets["Consolidados"]:
+        final_label = region["label_proposta_concordante"]
+        label_counts[final_label]["consolidadas_label_final"] += 1
+        if region["status"] == "CONSOLIDADA_NOVA":
+            label_counts[final_label]["novas_consolidadas"] += 1
+    for label, count in sorted(label_counts.items(), key=lambda item: (
+            0 if item[0].startswith("ENT_") else
+            1 if item[0].startswith("SEG_") else 2, item[0])):
+        consolidated = count["originais_consolidadas"] + count["novas_consolidadas"]
+        pending = count["originais_pendentes"] + count["novas_pendentes"]
+        sheets["Distribuicao_labels"].append({
+            "tipo": ("NER" if label.startswith("ENT_") else
+                     "SEG" if label.startswith("SEG_") else "UNKNOWN"),
+            "label": label,
+            "originais_total": count["originais_total"],
+            "originais_consolidadas": count["originais_consolidadas"],
+            "originais_pendentes": count["originais_pendentes"],
+            "novas_consolidadas": count["novas_consolidadas"],
+            "novas_pendentes": count["novas_pendentes"],
+            "consolidadas_total_por_label_origem": consolidated,
+            "nao_consolidadas_total": pending,
+            "total_registros": consolidated + pending,
+            "consolidadas_label_final": count["consolidadas_label_final"],
+        })
+    assert sum(row["originais_total"] for row in sheets["Distribuicao_labels"]) == metrics["originais"]
+    assert sum(row["consolidadas_total_por_label_origem"] for row in sheets["Distribuicao_labels"]) == metrics["consolidados_totais"]
+    assert sum(row["nao_consolidadas_total"] for row in sheets["Distribuicao_labels"]) == metrics["pendencias_totais"]
+    assert sum(row["consolidadas_label_final"] for row in sheets["Distribuicao_labels"]) == metrics["consolidados_totais"]
     sheets["Resumo"] = [{"metrica": key, "quantidade": value}
                         for key, value in metrics.items()]
     sheets["Motivos_pendencia"] = [
@@ -379,6 +419,7 @@ def audit(original, evaluation_11, evaluation_17):
         ("Interpretação", "Concordância estrutural, não Cohen Kappa nem gold."),
         ("Tipos", "NER corresponde a labels ENT_; SEG corresponde a labels SEG_. Contagens por tipo em Resumo e Por_acordao."),
         ("Motivos", "Motivos_pendencia apresenta descrição explicativa por motivo."),
+        ("Distribuicao_labels", "Originais agrupadas por label_original; novas consolidadas contadas uma vez por par, novas pendentes por proposta individual. A coluna consolidadas_label_final preserva o label resultante de concordância na avaliação."),
         ("Identidades", "O ID 12 corresponde a Mariana nos projetos de avaliação, conforme distribuição dos acórdãos; ID 4 também corresponde a Mariana no projeto de anotações originais."),
         *[(f"SHA256_{key}", value) for key, value in hashes.items()]]
     sheets["Instrucoes"] = [{"campo_regra": k, "descricao": v} for k, v in notes]
