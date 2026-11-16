@@ -68,6 +68,7 @@ def test_new_region_manual_even_if_no_checkbox(tmp_path):
                          ("new_17", "SEG_EMENTA", 20, 35, None)])
     sheets, metrics, _ = audit(*files(tmp_path, original, left, right))
     assert metrics["novas_coincidentes"] == 1
+    assert metrics["novas_propostas_coincidentes"] == 2
     assert len(sheets["Revisao_novas"]) == 2
     assert {row["decisao"] for row in sheets["Revisao_novas"]} == {"nova_regiao"}
     assert {row["projeto_avaliacao"] for row in sheets["Revisao_novas"]} == {11, 17}
