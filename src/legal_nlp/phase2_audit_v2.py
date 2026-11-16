@@ -290,7 +290,8 @@ def audit(original, evaluation_11, evaluation_17):
                     "mesma_geometria_outro_projeto_ids": ";".join(same_in_other),
                     "mesma_geometria_original_ids":
                         ";".join(sorted(original_geometries.get(geom, []))),
-                    "status": "PENDENTE_NOVA",
+                    "canonical_region_id": canonical,
+                    "status": status,
                     "motivo": reason,
                     "adjudicada": False,
                 })
