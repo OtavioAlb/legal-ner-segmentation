@@ -78,6 +78,7 @@ def test_new_region_manual_even_if_no_checkbox(tmp_path):
     assert new["projeto_17_region_id"] == "new_17"
     assert new["canonical_region_id"].startswith("new_")
     assert {row["canonical_region_id"] for row in sheets["Revisao_novas"]} == {new["canonical_region_id"]}
+    assert {row["status"] for row in sheets["Revisao_novas"]} == {"CONSOLIDADA_NOVA"}
     assert metrics["novas_consolidadas"] == 1
 
 
