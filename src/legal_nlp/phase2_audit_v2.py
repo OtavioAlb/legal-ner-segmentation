@@ -336,7 +336,14 @@ def audit(original, evaluation_11, evaluation_17):
         "novas_consolidadas": counts["CONSOLIDADA_NOVA"],
         "consolidados_totais": len(sheets["Consolidados"]),
         "novas_pendentes": sum(r["status"] == "PENDENTE_NOVA" for r in sheets["Revisao_novas"]),
-        "novas_coincidentes": sum(
+        # Counts distinct geometry pairs, not reviewer records. Each pair has
+        # two original region IDs preserved in Revisao_novas and Consolidados.
+        "novas_coincidentes": len({
+            (r["idacordao"], r["label"], r["start"], r["end"])
+            for r in sheets["Revisao_novas"]
+            if r["mesma_geometria_outro_projeto_ids"]
+        }),
+        "novas_propostas_coincidentes": sum(
             bool(r["mesma_geometria_outro_projeto_ids"])
             for r in sheets["Revisao_novas"]),
         "pendencias_totais": len(sheets["Revisao_originais"]) -
