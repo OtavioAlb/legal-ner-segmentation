@@ -156,12 +156,11 @@ def safe_filename(name):
 
 
 def write_workbooks(grouped, control, output_dir):
-    """Export exactly the five requested columns per reviewer, no counterpart decision."""
+    """Create ONE workbook: internal control and one five-column tab per reviewer."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-    from zipfile import ZipFile, ZIP_DEFLATED
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -194,8 +193,8 @@ def write_workbooks(grouped, control, output_dir):
             sheet.column_dimensions[get_column_letter(col_idx)].width = width
         return sheet
 
-    control_book = Workbook()
-    control_book.remove(control_book.active)
+    workbook = Workbook()
+    workbook.remove(workbook.active)
     control_headers = (
         "idacordao", "region_id", "projeto_avaliacao", "grupo_planilha",
         "avaliador_original_id", "avaliador_efetivo_id", "substituicao_por_tiago",
@@ -203,27 +202,15 @@ def write_workbooks(grouped, control, output_dir):
         "label_avaliado", "start_original", "end_original",
         "start_avaliado", "end_avaliado",
     )
-    populate(control_book, "Controle", control_headers, control)
-    created = []
+    populate(workbook, "Controle", control_headers, control)
     for reviewer_id in sorted(grouped, key=lambda n: (reviewer_name(n).casefold(), n)):
         name = reviewer_name(reviewer_id)
-        rows = grouped[reviewer_id]
-        public_rows = [{key: row[key] for key in FIELDS} for row in rows]
-        populate(control_book, name[:31], FIELDS, public_rows)
-        personal = Workbook()
-        personal.remove(personal.active)
-        populate(personal, "Revisao_checkbox", FIELDS, public_rows)
-        path = out / f"revisao_checkbox_{safe_filename(name)}.xlsx"
-        personal.save(path)
-        created.append(path)
+        public_rows = [{key: row[key] for key in FIELDS} for row in grouped[reviewer_id]]
+        populate(workbook, name[:31], FIELDS, public_rows)
 
-    control_path = out / "controle_checkbox.xlsx"
-    control_book.save(control_path)
-    zip_path = out / "planilhas_individuais.zip"
-    with ZipFile(zip_path, "w", ZIP_DEFLATED) as archive:
-        for path in created:
-            archive.write(path, arcname=path.name)
-    return control_path, zip_path
+    output_path = out / "revisao_checkbox_por_avaliador.xlsx"
+    workbook.save(output_path)
+    return output_path
 
 
 def main():
@@ -236,15 +223,14 @@ def main():
     grouped, control, metrics, hashes = review_rows(
         args.original, args.evaluation_11, args.evaluation_17
     )
-    control_path, zip_path = write_workbooks(grouped, control, args.output_dir)
+    workbook_path = write_workbooks(grouped, control, args.output_dir)
     print(json.dumps({
         "inconsistencias_individuais": len(control),
         "tarefas": sum(map(len, grouped.values())),
         "por_avaliador": {
             reviewer_name(key): len(value) for key, value in grouped.items()
         },
-        "controle": str(control_path),
-        "individuais_zip": str(zip_path),
+        "planilha_unica": str(workbook_path),
         "sha256": hashes,
     }, indent=2, ensure_ascii=False))
 
