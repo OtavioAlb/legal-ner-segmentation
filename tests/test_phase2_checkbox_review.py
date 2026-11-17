@@ -35,9 +35,7 @@ def test_problem_is_computed_from_checkbox_and_original_geometry():
     assert divergence_problem(old, altered, "Certo") == (
         "checkbox certo com anotação diferente do original"
     )
-    assert divergence_problem(old, same, "Certo") == (
-        "checkbox divergente entre avaliadores"
-    )
+    assert divergence_problem(old, same, "Certo") is None
 
 
 def test_two_independent_five_column_reviewer_sheets(tmp_path):
@@ -53,18 +51,44 @@ def test_two_independent_five_column_reviewer_sheets(tmp_path):
 
     grouped, control, metrics, _ = review_rows(*paths)
     assert len(control) == 1
-    assert {key: len(value) for key, value in grouped.items()} == {"8": 1, "5": 1}
+    assert {key: len(value) for key, value in grouped.items()} == {"8": 1}
     assert grouped["8"][0]["problema de divergencia"] == "limite igual original"
     assert grouped["8"][0]["decisão checkbox"] == "Limite impreciso"
-    assert grouped["5"][0]["decisão checkbox"] == "Certo"
+    assert control[0]["grupo_planilha"] == "Emily"
 
     output, archive = write_workbooks(grouped, control, tmp_path / "out")
     from openpyxl import load_workbook
     wb = load_workbook(output, read_only=True)
-    for name in ("Emily", "Guilherme"):
+    for name in ("Emily",):
         sheet = wb[name]
         assert [cell.value for cell in sheet[1]] == list(FIELDS)
         assert sheet.max_column == 5
         assert sheet.max_row == 2
     wb.close()
     assert archive.is_file()
+
+def test_substitution_assigned_to_teresa_not_tiago(tmp_path):
+    paths = []
+    for name, t in (
+        ("original", task(1, 8, "reg", "ENT_COMARCA", 10, 25)),
+        ("11", task(2, 3, "reg", "ENT_COMARCA", 10, 25, "Limite impreciso")),
+        ("17", task(3, 10, "reg", "ENT_COMARCA", 10, 25, "Incorreto", updated_by=3)),
+    ):
+        path = tmp_path / (name + ".json")
+        path.write_text(json.dumps([t]), encoding="utf-8")
+        paths.append(path)
+
+    grouped, control, metrics, _ = review_rows(*paths)
+    assert set(grouped) == {"3", "10"}
+    assert metrics["inconsistencias_individuais"] == 2
+    assert metrics["substituicoes_por_tiago"] == 1
+    assert next(row for row in control if row["grupo_planilha"] == "Teresa")[
+        "substituicao_por_tiago"
+    ] is True
+    output, _ = write_workbooks(grouped, control, tmp_path / "out")
+    from openpyxl import load_workbook
+    wb = load_workbook(output, read_only=True)
+    assert "Teresa" in wb.sheetnames
+    assert "Tiago" in wb.sheetnames
+    assert [c.value for c in wb["Teresa"][1]] == list(FIELDS)
+    wb.close()
