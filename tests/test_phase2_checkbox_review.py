@@ -46,7 +46,7 @@ def test_problem_is_computed_from_checkbox_and_original_geometry():
     assert divergence_problem(old, same, "Certo") is None
 
 
-def test_two_independent_five_column_reviewer_sheets(tmp_path):
+def test_two_independent_eight_column_reviewer_sheets(tmp_path):
     paths = []
     for name, t in (
         ("original", task(1, 8, "reg", "ENT_COMARCA", 10, 25)),
@@ -62,6 +62,9 @@ def test_two_independent_five_column_reviewer_sheets(tmp_path):
     assert {key: len(value) for key, value in grouped.items()} == {"8": 1}
     assert grouped["8"][0]["problema de divergencia"] == "limite igual original"
     assert grouped["8"][0]["decisão checkbox"] == "Limite impreciso"
+    assert grouped["8"][0]["label original"] == "ENT_COMARCA"
+    assert grouped["8"][0]["start original"] == 10
+    assert grouped["8"][0]["end original"] == 25
     assert control[0]["grupo_planilha"] == "Emily"
 
     output = write_workbooks(grouped, control, tmp_path / "out")
@@ -70,7 +73,7 @@ def test_two_independent_five_column_reviewer_sheets(tmp_path):
     for name in ("Emily",):
         sheet = wb[name]
         assert [cell.value for cell in sheet[1]] == list(FIELDS)
-        assert sheet.max_column == 5
+        assert sheet.max_column == 8
         assert sheet.max_row == 2
     wb.close()
     assert output.is_file()
