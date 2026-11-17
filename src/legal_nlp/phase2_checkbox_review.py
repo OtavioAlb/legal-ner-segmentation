@@ -21,6 +21,9 @@ from .phase2_audit_v2 import annotation, extract, identity, load
 
 FIELDS = (
     "idacordao",
+    "label original",
+    "start original",
+    "end original",
     "decisão checkbox",
     "label avaliado",
     "trecho anotado",
@@ -97,6 +100,9 @@ def review_rows(original, evaluation_11, evaluation_17):
                     continue
                 grouped[group_id].append({
                     "idacordao": int(doc),
+                    "label original": original_spans[rid]["label"],
+                    "start original": original_spans[rid]["start"],
+                    "end original": original_spans[rid]["end"],
                     "decisão checkbox": checkbox,
                     "label avaliado": region["label"],
                     "trecho anotado": region["text"],
@@ -156,7 +162,7 @@ def safe_filename(name):
 
 
 def write_workbooks(grouped, control, output_dir):
-    """Create ONE workbook: internal control and one five-column tab per reviewer."""
+    """Create ONE workbook: internal control and one eight-column tab per reviewer."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -166,7 +172,7 @@ def write_workbooks(grouped, control, output_dir):
     out.mkdir(parents=True, exist_ok=True)
     header_fill = PatternFill("solid", fgColor="17365D")
     header_font = Font(bold=True, color="FFFFFF")
-    widths = (18, 27, 31, 95, 48)
+    widths = (18, 31, 18, 18, 27, 31, 95, 48)
 
     def populate(book, title, columns, rows):
         sheet = book.create_sheet(title)
