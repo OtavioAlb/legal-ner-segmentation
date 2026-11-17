@@ -25,6 +25,7 @@ FIELDS = (
     "trecho anotado originalmente",
     "decisão checkbox",
     "label avaliado",
+    "idregiao",
     "trecho anotado",
     "problema de divergencia",
 )
@@ -103,6 +104,7 @@ def review_rows(original, evaluation_11, evaluation_17):
                     "trecho anotado originalmente": original_spans[rid]["text"],
                     "decisão checkbox": checkbox,
                     "label avaliado": region["label"],
+                    "idregiao": rid,
                     "trecho anotado": region["text"],
                     "problema de divergencia": problem,
                     "_start": region["start"],
@@ -160,7 +162,7 @@ def safe_filename(name):
 
 
 def write_workbooks(grouped, control, output_dir):
-    """Create ONE workbook: internal control and one seven-column tab per reviewer."""
+    """Create ONE workbook: internal control and one eight-column tab per reviewer."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -170,7 +172,7 @@ def write_workbooks(grouped, control, output_dir):
     out.mkdir(parents=True, exist_ok=True)
     header_fill = PatternFill("solid", fgColor="17365D")
     header_font = Font(bold=True, color="FFFFFF")
-    widths = (18, 31, 95, 27, 31, 95, 48)
+    widths = (18, 31, 95, 27, 31, 23, 95, 48)
 
     def populate(book, title, columns, rows):
         sheet = book.create_sheet(title)
