@@ -31,9 +31,17 @@ def test_problem_is_computed_from_checkbox_and_original_geometry():
     same = dict(old)
     assert divergence_problem(old, same, "Limite impreciso") == "limite igual original"
     assert divergence_problem(old, same, "Incorreto") == "label igual original"
-    altered = {"label": "ENT_RELATOR", "start": 10, "end": 25}
-    assert divergence_problem(old, altered, "Certo") == (
-        "checkbox certo com anotação diferente do original"
+    altered_label = {"label": "ENT_RELATOR", "start": 10, "end": 25}
+    altered_limit = {"label": "ENT_COMARCA", "start": 11, "end": 25}
+    altered_both = {"label": "ENT_RELATOR", "start": 11, "end": 26}
+    assert divergence_problem(old, altered_label, "Certo") == (
+        "checkbox certo com label diferente do original"
+    )
+    assert divergence_problem(old, altered_limit, "Certo") == (
+        "checkbox certo com limite diferente do original"
+    )
+    assert divergence_problem(old, altered_both, "Certo") == (
+        "checkbox certo com label e limite diferentes do original"
     )
     assert divergence_problem(old, same, "Certo") is None
 
