@@ -1,4 +1,4 @@
-"""Prepare independent checkbox-disagreement review sheets for phase 2.
+"""Prepare individual checkbox consistency review sheets for phase 2.
 
 Usage:
     python -m legal_nlp.phase2_checkbox_review \
@@ -14,10 +14,10 @@ from __future__ import annotations
 import argparse
 import json
 import unicodedata
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
-from .phase2_audit_v2 import audit, annotation, extract, identity, load
+from .phase2_audit_v2 import annotation, extract, identity, load
 
 FIELDS = (
     "idacordao",
@@ -43,73 +43,97 @@ def divergence_problem(original, evaluated, checkbox):
         original["label"], original["start"], original["end"]
     ) != (evaluated["label"], evaluated["start"], evaluated["end"]):
         return "checkbox certo com anotação diferente do original"
-    return "checkbox divergente entre avaliadores"
+    return None
 
 
 def review_rows(original, evaluation_11, evaluation_17):
-    """Return independent rows, one per evaluator and conflicted original region."""
-    sheets, metrics, hashes = audit(original, evaluation_11, evaluation_17)
-    sources = {
-        "original": load(original),
-        "11": load(evaluation_11),
-        "17": load(evaluation_17),
+    """Identify individual checkbox inconsistencies regardless of cross-review outcome.
+
+    Routing uses the initial task owner. A completed_by=10/updated_by=3
+    replacement is assigned to Teresa's worksheet and provenance stays in Control.
+    """
+    from hashlib import sha256
+
+    paths = {
+        "original": Path(original),
+        "11": Path(evaluation_11),
+        "17": Path(evaluation_17),
     }
+    sources = {key: load(path) for key, path in paths.items()}
+    originals = sources["original"]
+    if not originals or any(
+        set(sources[project]) != set(originals) for project in ("11", "17")
+    ):
+        raise ValueError("Document sets differ")
+
     grouped = defaultdict(list)
     control = []
-
-    for item in sheets["Divergencia_checkbox"]:
-        doc, rid = str(item["idacordao"]), str(item["region_id_original"])
-        original_spans, _, _ = extract(sources["original"][doc])
-        original_region = original_spans[rid]
-        reviewers = {}
+    for doc in sorted(originals, key=int):
+        original_spans, _, _ = extract(originals[doc])
         for project in ("11", "17"):
-            spans, choices, _ = extract(sources[project][doc])
-            reviewer_id, _, complete = identity(sources[project][doc])
+            task = sources[project][doc]
+            spans, choices, _ = extract(task)
+            effective_id, _, complete = identity(task)
             if not complete:
-                raise ValueError(f"Unresolved reviewer replacement on document {doc}")
-            if rid not in spans:
-                raise ValueError(f"Missing evaluated region {doc}/{project}/{rid}")
-            region = spans[rid]
-            normalized = item[f"projeto_{project}_decisao"]
-            checkbox = choices.get(rid)
-            decision_label = checkbox if checkbox else normalized + " (automático)"
-            problem = divergence_problem(original_region, region, checkbox)
-            reviewers[project] = {
-                "reviewer_id": reviewer_id,
-                "region": region,
-                "checkbox": decision_label,
-                "problem": problem,
-            }
-            grouped[reviewer_id].append({
-                "idacordao": int(doc),
-                "decisão checkbox": decision_label,
-                "label avaliado": region["label"],
-                "trecho anotado": region["text"],
-                "problema de divergencia": problem,
-                "_start": region["start"],
-                "_region_id": rid,
-                "_project": project,
-            })
-        control.append({
-            "idacordao": int(doc),
-            "region_id": rid,
-            "avaliador_11_id": reviewers["11"]["reviewer_id"],
-            "checkbox_11": reviewers["11"]["checkbox"],
-            "problema_11": reviewers["11"]["problem"],
-            "avaliador_17_id": reviewers["17"]["reviewer_id"],
-            "checkbox_17": reviewers["17"]["checkbox"],
-            "problema_17": reviewers["17"]["problem"],
-        })
+                continue
+            owner_id = str(annotation(task).get("completed_by", ""))
+            substituted = owner_id == "10" and effective_id == "3"
+            group_id = owner_id if substituted else effective_id
+            for rid, region in spans.items():
+                if rid not in original_spans:
+                    continue
+                checkbox = choices.get(rid)
+                if not checkbox:
+                    continue
+                problem = divergence_problem(original_spans[rid], region, checkbox)
+                if problem is None:
+                    continue
+                grouped[group_id].append({
+                    "idacordao": int(doc),
+                    "decisão checkbox": checkbox,
+                    "label avaliado": region["label"],
+                    "trecho anotado": region["text"],
+                    "problema de divergencia": problem,
+                    "_start": region["start"],
+                    "_region_id": rid,
+                    "_project": project,
+                })
+                control.append({
+                    "idacordao": int(doc),
+                    "region_id": rid,
+                    "projeto_avaliacao": int(project),
+                    "grupo_planilha": reviewer_name(group_id),
+                    "avaliador_original_id": owner_id,
+                    "avaliador_efetivo_id": effective_id,
+                    "substituicao_por_tiago": substituted,
+                    "decisão checkbox": checkbox,
+                    "problema de divergencia": problem,
+                    "label_original": original_spans[rid]["label"],
+                    "label_avaliado": region["label"],
+                    "start_original": original_spans[rid]["start"],
+                    "end_original": original_spans[rid]["end"],
+                    "start_avaliado": region["start"],
+                    "end_avaliado": region["end"],
+                })
 
     for records in grouped.values():
         records.sort(key=lambda row: (
             row["idacordao"], row["_start"], row["_region_id"], row["_project"]
         ))
-    control.sort(key=lambda row: (row["idacordao"], row["region_id"]))
-    if sum(map(len, grouped.values())) != 2 * len(control):
-        raise AssertionError("Each checkbox disagreement must reach two reviewers")
-    if len(control) != metrics["isolados_checkbox_divergente"]:
-        raise AssertionError("Checkbox discrepancy count did not reconcile")
+    control.sort(key=lambda row: (
+        row["idacordao"], row["region_id"], row["projeto_avaliacao"]
+    ))
+    if sum(map(len, grouped.values())) != len(control):
+        raise AssertionError("Individual checkbox review count does not reconcile")
+    metrics = {
+        "inconsistencias_individuais": len(control),
+        "avaliadores_ou_grupos": len(grouped),
+        "substituicoes_por_tiago": sum(
+            row["substituicao_por_tiago"] for row in control
+        ),
+    }
+    hashes = {name: sha256(path.read_bytes()).hexdigest()
+              for name, path in paths.items()}
     return dict(grouped), control, metrics, hashes
 
 
@@ -166,8 +190,11 @@ def write_workbooks(grouped, control, output_dir):
     control_book = Workbook()
     control_book.remove(control_book.active)
     control_headers = (
-        "idacordao", "region_id", "avaliador_11_id", "checkbox_11", "problema_11",
-        "avaliador_17_id", "checkbox_17", "problema_17",
+        "idacordao", "region_id", "projeto_avaliacao", "grupo_planilha",
+        "avaliador_original_id", "avaliador_efetivo_id", "substituicao_por_tiago",
+        "decisão checkbox", "problema de divergencia", "label_original",
+        "label_avaliado", "start_original", "end_original",
+        "start_avaliado", "end_avaliado",
     )
     populate(control_book, "Controle", control_headers, control)
     created = []
@@ -204,7 +231,7 @@ def main():
     )
     control_path, zip_path = write_workbooks(grouped, control, args.output_dir)
     print(json.dumps({
-        "divergencias": len(control),
+        "inconsistencias_individuais": len(control),
         "tarefas": sum(map(len, grouped.values())),
         "por_avaliador": {
             reviewer_name(key): len(value) for key, value in grouped.items()
