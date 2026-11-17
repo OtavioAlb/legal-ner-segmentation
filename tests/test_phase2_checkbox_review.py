@@ -64,7 +64,7 @@ def test_two_independent_five_column_reviewer_sheets(tmp_path):
     assert grouped["8"][0]["decisão checkbox"] == "Limite impreciso"
     assert control[0]["grupo_planilha"] == "Emily"
 
-    output, archive = write_workbooks(grouped, control, tmp_path / "out")
+    output = write_workbooks(grouped, control, tmp_path / "out")
     from openpyxl import load_workbook
     wb = load_workbook(output, read_only=True)
     for name in ("Emily",):
@@ -73,7 +73,7 @@ def test_two_independent_five_column_reviewer_sheets(tmp_path):
         assert sheet.max_column == 5
         assert sheet.max_row == 2
     wb.close()
-    assert archive.is_file()
+    assert output.is_file()
 
 def test_substitution_assigned_to_teresa_not_tiago(tmp_path):
     paths = []
@@ -93,7 +93,7 @@ def test_substitution_assigned_to_teresa_not_tiago(tmp_path):
     assert next(row for row in control if row["grupo_planilha"] == "Teresa")[
         "substituicao_por_tiago"
     ] is True
-    output, _ = write_workbooks(grouped, control, tmp_path / "out")
+    output = write_workbooks(grouped, control, tmp_path / "out")
     from openpyxl import load_workbook
     wb = load_workbook(output, read_only=True)
     assert "Teresa" in wb.sheetnames
