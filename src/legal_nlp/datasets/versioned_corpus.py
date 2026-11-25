@@ -12,6 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from .corpus_adapters import phase1_records, phase2_records, resolve_text
+from .quarantine import scan_phase2_regions
 from ..io.jsonl import read_jsonl, write_jsonl
 from ..io.label_studio import load as load_label_studio
 from ..phase2_audit_v2 import audit as audit_phase2
@@ -83,6 +84,7 @@ def build_diagnostic_corpus(
     output_dir: str | Path,
     *,
     version: str,
+    quarantine_unresolved: bool = False,
 ) -> dict:
     """Produce a versioned, traceable diagnostic snapshot; no training splits."""
     if not version or not version.replace("-", "").replace("_", "").isalnum():
@@ -110,7 +112,64 @@ def build_diagnostic_corpus(
 
     documents, phase2_text = _documents(phase1, originals)
     p1 = phase1_records(phase1)
-    p2 = resolve_text(phase2_records(sheets), phase2_text)
+    phase2_candidates = phase2_records(sheets)
+    quarantine_records = []
+    text_integrity_counts = {}
+    if quarantine_unresolved:
+        affected, findings, text_integrity_counts = scan_phase2_regions(
+            paths["phase2_original"], paths["phase2_review_11"],
+            paths["phase2_review_17"], _text_from_task,
+        )
+        def relevant_region_ids(record):
+            ids = {str(record["region_id"])}
+            provenance = record.get("provenance")
+            if isinstance(provenance, dict):
+                for key in ("original_region_id", "project_11_region_id",
+                            "project_17_region_id"):
+                    value = provenance.get(key)
+                    if value:
+                        ids.add(str(value))
+            return ids
+
+        eligible_candidates = []
+        for record in phase2_candidates:
+            doc_id = record["document_id"]
+            related = sorted(
+                rid for rid in relevant_region_ids(record)
+                if (doc_id, rid) in affected
+            )
+            if related:
+                quarantine_records.append({
+                    "document_id": "phase_2:" + doc_id,
+                    "region_id": record["region_id"],
+                    "source_status": record["source_status"],
+                    "original_review_status": record["status"],
+                    "task": record["task"],
+                    "label": record["label"],
+                    "start": record["start"],
+                    "end": record["end"],
+                    "related_source_region_ids": related,
+                    "reason": "unresolved_source_text_integrity",
+                    "provenance": record["provenance"],
+                })
+            else:
+                eligible_candidates.append(record)
+        phase2_candidates = eligible_candidates
+        # Store unmatched raw-source evidence too, including discrepancies
+        # that are not part of the normalized audit view.
+        for finding in findings:
+            quarantine_records.append({
+                "document_id": "phase_2:" + finding["idacordao"],
+                "region_id": finding["region_id"],
+                "project": finding["project"],
+                "task": "NER" if finding["label"].startswith("ENT_") else "SEG",
+                "label": finding["label"],
+                "start": finding["start"],
+                "end": finding["end"],
+                "reason": finding["reason"],
+                "record_type": "raw_source_occurrence",
+            })
+    p2 = resolve_text(phase2_candidates, phase2_text)
     rows = []
     seen_source_regions = set()
     for record in p1 + p2:
@@ -151,6 +210,20 @@ def build_diagnostic_corpus(
         "document_count": len(documents),
         "document_count_by_phase": dict(sorted(Counter(d["phase"] for d in documents).items())),
         "annotation_count": len(rows),
+        "quarantine_enabled": quarantine_unresolved,
+        "quarantine_record_count": len(quarantine_records),
+        "quarantine_normalized_rows": sum(
+            item.get("reason") == "unresolved_source_text_integrity"
+            for item in quarantine_records
+        ),
+        "source_text_integrity_counts": text_integrity_counts,
+        "quarantine_policy": (
+            "Conservative exclusion from normalized annotations if any source "
+            "project for the same decision and region ID has an unresolved text "
+            "mismatch; preserve each source occurrence in quarantine.jsonl; "
+            "not training-ready"
+        ) if quarantine_unresolved else "strict validation",
+
         "counts": [
             {"phase": phase, "task": task, "status": status, "count": count}
             for (phase, task, status), count in sorted(counts.items())
@@ -170,6 +243,8 @@ def build_diagnostic_corpus(
     out.mkdir(parents=True, exist_ok=False)
     write_jsonl(out / "documents.jsonl", documents)
     write_jsonl(out / "annotations.jsonl", rows)
+    if quarantine_unresolved:
+        write_jsonl(out / "quarantine.jsonl", quarantine_records)
     (out / "dataset_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -186,11 +261,14 @@ def main() -> None:
     parser.add_argument("--labels", type=Path, default=Path("configs/labels.json"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--quarantine-unresolved", action="store_true",
+                        help="Diagnostic mode; quarantine unresolved source texts without changing originals")
     args = parser.parse_args()
     result = build_diagnostic_corpus(
         args.phase1_document_spans, args.phase2_original,
         args.phase2_review_11, args.phase2_review_17,
         args.labels, args.output, version=args.version,
+        quarantine_unresolved=args.quarantine_unresolved,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
