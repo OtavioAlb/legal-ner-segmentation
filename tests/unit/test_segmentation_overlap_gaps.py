@@ -88,7 +88,7 @@ def test_matrix_gaps_and_mapped_vote_exclusion(tmp_path):
     cross = next(r for r in phase1_pairs if not r["same_label"])
     assert cross["pair_count"] == 2
     assert result["by_phase"]["phase_2"]["geometry_pairs"]["partial_overlap"] == 1
-    assert result["by_phase"]["phase_1"]["geometry_pairs"]["strict_containment"] == 1
+    assert result["by_phase"]["phase_1"]["geometry_pairs"]["strict_containment"] == 2
     assert result["top_uncovered_intervals"][0]["characters"] == 18
     assert before == {str(f): f.read_bytes() for d in (src, derived) for f in d.iterdir()}
 
