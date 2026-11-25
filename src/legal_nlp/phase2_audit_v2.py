@@ -14,6 +14,8 @@ from pathlib import Path
 from .io.label_studio import load, annotation, extract
 from .annotations.identity import NAMES, identity
 from .annotations.decisions import geometry, decision
+from .annotations.reviews.geometry import classify_original_region
+from .annotations.reviews.new_regions import classify_new_proposal
 
 SHEETS = ("Resumo", "Motivos_pendencia", "Revisao_originais", "Revisao_novas",
           "Consolidados", "Divergencia_checkbox", "Divergencia_geometria", "Duplicatas_exatas",
@@ -62,19 +64,9 @@ def audit(original, evaluation_11, evaluation_17):
         for rid, old in sorted(base.items(), key=lambda x: (x[1]["start"], x[0])):
             r = {p: review[p][0].get(rid) for p in ("11", "17")}
             d = {p: decision(old, r[p], review[p][1].get(rid)) for p in ("11", "17")}
-            same = (r["11"] is not None and r["17"] is not None
-                    and geometry(r["11"]) == geometry(r["17"]))
-            conflict = same and d["11"].removesuffix("_automatico") != d["17"].removesuffix("_automatico")
-            if not complete:
-                status, reason = "PENDENTE_SUBSTITUICAO", "aguardando_substituicao"
-            elif not same:
-                status, reason = "PENDENTE_GEOMETRIA", "ausencia_ou_divergencia_geometria"
-            elif conflict:
-                status, reason = "DIVERGENCIA_CHECKBOX", "checkbox_divergente_geometria_igual"
-            elif geometry(old) == geometry(r["11"]):
-                status, reason = "CONCORDANCIA_ORIGINAL", ""
-            else:
-                status, reason = "CONCORDANCIA_AVALIACAO", ""
+            status, reason = classify_original_region(
+                old, r["11"], r["17"], d["11"], d["17"], complete
+            )
             counts[status] += 1
             perdoc[status] += 1
             if reason:
@@ -174,22 +166,15 @@ def audit(original, evaluation_11, evaluation_17):
                 same_in_other = sorted(
                     other_id for other_id, other_span in review[other_p][0].items()
                     if other_id not in base and geometry(other_span) == geom)
-                if geom in consolidated_new:
-                    status, reason = "CONSOLIDADA_NOVA", ""
-                elif not complete:
-                    status, reason = "PENDENTE_NOVA", "nova_aguardando_substituicao"
-                elif same_in_other and (
-                        len(new_groups[p][geom]) != 1 or
-                        len(new_groups[other_p][geom]) != 1):
-                    status, reason = "PENDENTE_NOVA", "nova_ambigua_ids_duplicados"
-                elif same_in_other and original_geometries.get(geom):
-                    status, reason = "PENDENTE_NOVA", "nova_duplicada_do_original"
-                elif same_in_other and people[p][0] == people[other_p][0]:
-                    status, reason = "PENDENTE_NOVA", "nova_sem_avaliadores_distintos"
-                elif same_in_other:
-                    status, reason = "PENDENTE_NOVA", "nova_coincidente_pendente"
-                else:
-                    status, reason = "PENDENTE_NOVA", "nova_unilateral_pendente"
+                status, reason = classify_new_proposal(
+                    consolidated=geom in consolidated_new,
+                    complete=complete,
+                    same_in_other=bool(same_in_other),
+                    count_here=len(new_groups[p][geom]),
+                    count_other=len(new_groups[other_p][geom]),
+                    duplicates_original=bool(original_geometries.get(geom)),
+                    same_reviewer=people[p][0] == people[other_p][0],
+                )
                 if reason:
                     reasons[reason] += 1
                     perdoc["NOVAS_PENDENTES"] += 1
