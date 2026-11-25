@@ -46,7 +46,6 @@ def analyze_overlap_gaps(snapshot, harmonized, taxonomy, *, top_n=30, min_gap=15
         snapshot, harmonized, taxonomy
     )
     by_doc = defaultdict(list)
-    docmap = {d["document_id"]: d for d in docs}
     for row in rows:
         if row["task"] == "SEG":
             by_doc[row["document_id"]].append(row)
@@ -77,7 +76,6 @@ def analyze_overlap_gaps(snapshot, harmonized, taxonomy, *, top_n=30, min_gap=15
             key = (phase, label_a, label_b)
             matrix[key] += 1
             pair_detail[key]["overlap_characters_sum"] += overlap
-            pair_detail[key]["documents"].add(doc_id) if False else None
             both_consolidated = (a["status"] == "consolidated" and
                                  b["status"] == "consolidated")
             pair_detail[key]["both_consolidated"] += both_consolidated
