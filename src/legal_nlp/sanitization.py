@@ -6,6 +6,8 @@ Private generated data remains local beneath data/interim/.
 """
 from __future__ import annotations
 
+from .io.jsonl import read_jsonl, write_jsonl
+
 import argparse
 import json
 from collections import Counter
@@ -15,16 +17,9 @@ from typing import Any
 from .audit import classify_mismatch
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    with path.open(encoding="utf-8") as stream:
-        return [json.loads(line) for line in stream if line.strip()]
+_read_jsonl = read_jsonl
 
-
-def _write_jsonl(path: Path, values: list[dict[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8", newline="\n") as stream:
-        for value in values:
-            stream.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n")
-
+_write_jsonl = write_jsonl
 
 def sanitize_phase1(
     dataset_dir: str | Path,
