@@ -33,6 +33,18 @@ def analyze_readiness(snapshot_dir: str | Path) -> dict[str, Any]:
         raise ValueError("Expected an explicitly non-training diagnostic snapshot")
     if len(documents) != manifest.get("document_count") or len(annotations) != manifest.get("annotation_count"):
         raise ValueError("Snapshot and manifest row counts differ")
+    quarantine_count = manifest.get("quarantine_record_count", 0)
+    if type(quarantine_count) is not int or quarantine_count < 0:
+        raise ValueError("Invalid quarantine count in manifest")
+    if manifest.get("quarantine_enabled"):
+        quarantine_file = root / "quarantine.jsonl"
+        if not quarantine_file.is_file():
+            raise ValueError("Quarantine manifest requires quarantine.jsonl")
+        if len(read_jsonl(quarantine_file)) != quarantine_count:
+            raise ValueError("Quarantine and manifest row counts differ")
+    elif quarantine_count:
+        raise ValueError("Nonzero quarantine count without quarantine mode")
+
 
     ids: set[str] = set()
     acordaos: dict[str, str] = {}
@@ -112,6 +124,7 @@ def analyze_readiness(snapshot_dir: str | Path) -> dict[str, Any]:
         "taxonomy_version_present": bool(manifest.get("taxonomy_version")),
         "process_linkage_complete": not grouping_missing,
         "annotation_adjudication_complete": statuses["pending_review"] == 0,
+        "source_text_quarantine_empty": quarantine_count == 0,
         "formal_gold_approval": False,
         "splits_frozen": manifest.get("splits_frozen") is True,
     }
@@ -127,6 +140,7 @@ def analyze_readiness(snapshot_dir: str | Path) -> dict[str, Any]:
         },
         "document_count": len(documents),
         "annotation_count": len(annotations),
+        "quarantine_record_count": quarantine_count,
         "annotation_status_counts": dict(sorted(statuses.items())),
         "by_task_status": {
             task: dict(sorted(counter.items())) for task, counter in sorted(by_task.items())
