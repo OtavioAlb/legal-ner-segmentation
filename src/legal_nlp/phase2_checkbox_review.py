@@ -17,7 +17,8 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
-from .phase2_audit_v2 import annotation, extract, identity, load
+from .io.label_studio import annotation, extract, load
+from .annotations.identity import NAMES, identity
 
 FIELDS = (
     "idacordao",
@@ -151,7 +152,6 @@ def review_rows(original, evaluation_11, evaluation_17):
 
 
 def reviewer_name(reviewer_id):
-    from .phase2_audit_v2 import NAMES
     return NAMES.get(str(reviewer_id), "ID " + str(reviewer_id))
 
 
