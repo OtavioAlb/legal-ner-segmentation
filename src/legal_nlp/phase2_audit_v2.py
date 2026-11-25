@@ -10,11 +10,14 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
+# Public legacy names remain importable from this module.
+from .io.label_studio import load, annotation, extract
+from .annotations.identity import NAMES, identity
+from .annotations.decisions import geometry, decision
+
 SHEETS = ("Resumo", "Motivos_pendencia", "Revisao_originais", "Revisao_novas",
           "Consolidados", "Divergencia_checkbox", "Divergencia_geometria", "Duplicatas_exatas",
           "Por_acordao", "Distribuicao_labels", "Instrucoes")
-NAMES = {"3": "Tiago", "4": "Mariana", "5": "Guilherme", "7": "Letícia",
-         "8": "Emily", "9": "Giulia", "10": "Teresa", "12": "Mariana"}
 MOTIVO_DESCRICOES = {
     "aguardando_substituicao": "Região original em acórdão cuja avaliação atribuída a Teresa ainda não foi substituída; não há dois pareceres elegíveis.",
     "ausencia_ou_divergencia_geometria": "Uma avaliação não contém o ID da região original ou as duas avaliações divergem em label, start ou end.",
@@ -27,83 +30,6 @@ MOTIVO_DESCRICOES = {
     "nova_coincidente_pendente": "Duas novas propostas têm mesma geometria, mas alguma condição de consolidação automática ainda não foi satisfeita.",
 }
 
-
-
-def load(path):
-    tasks = json.loads(Path(path).read_text(encoding="utf-8-sig"))
-    if not isinstance(tasks, list):
-        raise ValueError("Expected list of Label Studio tasks")
-    result = {}
-    for task in tasks:
-        key = str(task["data"]["idacordao"])
-        if key in result:
-            raise ValueError(f"Duplicate document: {key}")
-        result[key] = task
-    return result
-
-
-def annotation(task):
-    active = [a for a in task.get("annotations", []) if not a.get("was_cancelled")]
-    if len(active) != 1:
-        raise ValueError(f"Expected one active annotation: {task.get('id')}")
-    return active[0]
-
-
-def extract(task):
-    spans, choices, comments = {}, {}, defaultdict(list)
-    for item in annotation(task).get("result", []):
-        kind, rid, value = item.get("type"), item.get("id"), item.get("value") or {}
-        if kind not in {"labels", "choices", "textarea"}:
-            continue
-        if not rid:
-            raise ValueError("Missing region_id")
-        if kind == "labels":
-            labels, start, end = value.get("labels") or [], value.get("start"), value.get("end")
-            if (rid in spans or len(labels) != 1 or type(start) is not int
-                    or type(end) is not int or not 0 <= start < end):
-                raise ValueError(f"Invalid or duplicate region {rid}")
-            spans[rid] = {"label": labels[0], "start": start,
-                          "end": end, "text": value.get("text", "")}
-        elif kind == "choices":
-            if rid in choices:
-                raise ValueError(f"Duplicate choice for {rid}")
-            values = value.get("choices") or []
-            choices[rid] = values[0] if len(values) == 1 else None
-        else:
-            values = value.get("text") or []
-            comments[rid].extend(values if isinstance(values, list) else [values])
-    return spans, choices, {k: " | ".join(map(str, v)) for k, v in comments.items()}
-
-
-def geometry(r):
-    return (r["label"], r["start"], r["end"]) if r else None
-
-
-def identity(task):
-    ann = annotation(task)
-    completed, updated = str(ann.get("completed_by", "")), str(task.get("updated_by", ""))
-    if (completed == "10" and updated == "3"
-            and any(x.get("type") == "choices" for x in ann.get("result", []))):
-        return "3", "substituição", True
-    if completed == "10":
-        return "10", "Teresa", False
-    return completed, NAMES.get(completed, "ID " + completed), True
-
-
-def decision(original, evaluated, explicit):
-    if evaluated is None:
-        return "nao_avaliada"
-    if original is None:
-        return "nova_regiao"
-    if explicit:
-        return {"certo": "correto", "incorreto": "incorreto",
-                "limite impreciso": "limite_impreciso"}.get(
-                    explicit.strip().casefold(), "julgamento_desconhecido")
-    if original["label"] != evaluated["label"]:
-        return "incorreto_automatico"
-    if geometry(original) != geometry(evaluated):
-        return "limite_impreciso_automatico"
-    return "correto_automatico"
 
 
 def audit(original, evaluation_11, evaluation_17):
