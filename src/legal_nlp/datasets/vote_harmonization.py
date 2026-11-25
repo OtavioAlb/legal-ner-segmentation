@@ -46,7 +46,8 @@ def build_vote_harmonized_view(snapshot_dir, output_dir):
             raise ValueError("Missing input quarantine")
         if len(read_jsonl(source_quarantine)) != manifest["quarantine_record_count"]:
             raise ValueError("Input quarantine count mismatch")
-    if len({d["document_id"] for d in documents}) != len(documents):
+    document_ids = {d["document_id"] for d in documents}
+    if len(document_ids) != len(documents):
         raise ValueError("Duplicate document identifiers")
 
     rewritten = []
@@ -54,7 +55,7 @@ def build_vote_harmonized_view(snapshot_dir, output_dir):
     seen = set()
     for row in records:
         phase, original, task = row["phase"], row["label"], row["task"]
-        if row["document_id"] not in {d["document_id"] for d in documents}:
+        if row["document_id"] not in document_ids:
             raise ValueError("Unknown document identifier")
         if row["status"] not in ("consolidated", "pending_review"):
             raise ValueError("Unexpected status in input")
