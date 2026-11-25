@@ -6,7 +6,7 @@ from legal_nlp.datasets.span_text_diagnostics import (
 )
 
 
-def task(reviewer, excerpt, *, choice="Incorreto"):
+def task(reviewer, excerpt, *, choice="Incorreto", end=7):
     return {
         "id": 42, "data": {"idacordao": 42, "acordao": "abc\ndef"},
         "updated_by": reviewer,
@@ -14,7 +14,7 @@ def task(reviewer, excerpt, *, choice="Incorreto"):
             "completed_by": reviewer, "result": [
                 {"id": "r1", "type": "labels",
                  "value": {"labels": ["ENT_COMARCA"], "start": 0,
-                           "end": 7, "text": excerpt}},
+                           "end": end, "text": excerpt}},
                 {"id": "r1", "type": "choices", "value": {"choices": [choice]}},
             ],
         }],
@@ -35,7 +35,7 @@ def test_diagnostic_finds_all_regions_without_modifying_sources(tmp_path):
         ("17", 5, "abc\ndef"),
     ]:
         path = tmp_path / (name + ".json")
-        path.write_text(json.dumps([task(reviewer, excerpt)]), encoding="utf-8")
+        path.write_text(json.dumps([task(reviewer, excerpt, end=6 if name == "17" else 7)]), encoding="utf-8")
         p.append(path)
     before = [x.read_bytes() for x in p]
     result = inspect_phase2_text(*p)
