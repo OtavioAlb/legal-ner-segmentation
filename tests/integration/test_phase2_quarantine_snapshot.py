@@ -4,6 +4,7 @@ import json
 import pytest
 
 from legal_nlp.datasets.versioned_corpus import build_diagnostic_corpus
+from legal_nlp.datasets.readiness import analyze_readiness
 from legal_nlp.io.jsonl import read_jsonl
 from test_versioned_corpus import fixture_paths
 
@@ -45,6 +46,10 @@ def test_quarantine_retains_source_lineage_without_promoting_gold(tmp_path):
     assert {r["region_id"] for r in quarantine} == {"r1"}
     assert any(r.get("project") == "11" for r in quarantine)
     assert all("text" not in r for r in quarantine)
+    readiness = analyze_readiness(out)
+    assert readiness["training_ready"] is False
+    assert readiness["quarantine_record_count"] == 2
+    assert "source_text_quarantine_empty" in readiness["blockers"]
 
 
 def test_normal_snapshot_does_not_create_quarantine_file(tmp_path):
