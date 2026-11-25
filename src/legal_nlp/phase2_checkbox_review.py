@@ -19,6 +19,7 @@ from pathlib import Path
 
 from .io.label_studio import annotation, extract, load
 from .annotations.identity import NAMES, identity
+from .annotations.reviews.checkbox import divergence_problem
 
 FIELDS = (
     "idacordao",
@@ -30,31 +31,6 @@ FIELDS = (
     "trecho anotado",
     "problema de divergencia",
 )
-
-
-def divergence_problem(original, evaluated, checkbox):
-    """Describe a reviewer's internal inconsistency, without adjudicating it."""
-    if original is None or evaluated is None:
-        raise ValueError("Checkbox conflict requires original and evaluated regions")
-    normalized = (checkbox or "").strip().casefold()
-    if normalized == "limite impreciso" and (
-        original["start"], original["end"]
-    ) == (evaluated["start"], evaluated["end"]):
-        return "limite igual original"
-    if normalized == "incorreto" and original["label"] == evaluated["label"]:
-        return "label igual original"
-    if normalized == "certo":
-        label_changed = original["label"] != evaluated["label"]
-        limit_changed = (
-            original["start"], original["end"]
-        ) != (evaluated["start"], evaluated["end"])
-        if label_changed and limit_changed:
-            return "checkbox certo com label e limite diferentes do original"
-        if label_changed:
-            return "checkbox certo com label diferente do original"
-        if limit_changed:
-            return "checkbox certo com limite diferente do original"
-    return None
 
 
 def review_rows(original, evaluation_11, evaluation_17):
