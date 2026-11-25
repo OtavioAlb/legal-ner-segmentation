@@ -12,12 +12,10 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from .io.jsonl import write_jsonl
 
-def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8", newline="\n") as output:
-        for row in records:
-            output.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
+_write_jsonl = write_jsonl
 
 def diagnose_spans(
     input_path: str | Path,
