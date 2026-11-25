@@ -16,7 +16,8 @@ def _row(doc_id, region_id, label, start, end, status="consolidated"):
     return {
         "phase": phase, "document_id": doc_id,
         "region_id": region_id, "label": label,
-        "task": "SEG", "start": start, "end": end,
+        "task": "SEG", "source_task": "SEG", "source_label": label,
+        "start": start, "end": end,
         "text": ("a" if phase == "phase_1" else "b") * (end-start),
         "status": status, "source_status": "test",
         "provenance": {"source_region_id": region_id},
