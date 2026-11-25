@@ -7,6 +7,8 @@ This is not overlap adjudication and does not produce BIO tags.
 """
 from __future__ import annotations
 
+from .io.jsonl import read_jsonl, write_jsonl
+
 import argparse
 import hashlib
 import json
@@ -15,16 +17,9 @@ from pathlib import Path
 from typing import Any
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    with path.open(encoding="utf-8") as stream:
-        return [json.loads(line) for line in stream if line.strip()]
+_read_jsonl = read_jsonl
 
-
-def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8", newline="\n") as stream:
-        for row in rows:
-            stream.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-
+_write_jsonl = write_jsonl
 
 def _logical_span_id(key: tuple[str, str, int, int, str]) -> str:
     encoded = json.dumps(key, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
