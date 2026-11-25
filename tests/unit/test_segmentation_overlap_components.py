@@ -116,7 +116,8 @@ def test_full_report_integrity_and_immutability(tmp_path):
     assert report["by_phase"]["phase_1"]["regions_in_components"] == 5
     assert report["by_phase"]["phase_1"]["overlapping_pairs_in_components"] == 4
     assert report["by_phase"]["phase_1"]["near_boundary_pairs"] == 2
-    assert report["by_phase"]["phase_2"]["pending_regions"] if False else True
+    assert report["by_phase"]["phase_2"]["overlap_components"] == 1
+    assert report["by_phase"]["phase_2"]["overlapping_pairs_in_components"] == 1
     assert len(report["review_queue"]) == 2
     assert {g["document_id"] for g in report["review_queue"]} == {
         "phase_1:a", "phase_1:b"
