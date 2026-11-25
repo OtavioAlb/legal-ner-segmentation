@@ -6,13 +6,13 @@ multilabel annotation. Priority evidence never drops either span.
 """
 from __future__ import annotations
 
-from .io.jsonl import read_jsonl, write_jsonl
-
 import argparse
 import json
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+from .io.jsonl import read_jsonl, write_jsonl
 
 
 _read_jsonl = read_jsonl
