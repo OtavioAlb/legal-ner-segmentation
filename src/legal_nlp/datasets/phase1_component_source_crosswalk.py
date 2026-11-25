@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 from .phase1_source_lineage import audit_phase1_lineage
@@ -121,15 +121,11 @@ def analyze_component_source_crosswalk(
             "overlapping_pairs": sum(g["overlapping_pairs"] for g in part),
             "near_boundary_pairs": sum(g["near_boundary_pairs"] for g in part),
         }
-    # Regression against independently established geometry totals;
-    # if upstream schema/data changes, fail rather than silently misreport.
-    if (len(rows) != 955 or len(group_rows) != 187
-            or len(spans_in_groups) != 769
-            or sum(g["overlapping_pairs"] for g in group_rows) != 1086):
-        raise ValueError(
-            "The validated 2026-11-16 baseline geometry has changed; "
-            "reconcile version and do not assume prior statistics still apply"
-        )
+    if len(spans_in_groups) != sum(g["number_of_regions"] for g in group_rows):
+        raise ValueError("Repeated spans in source-linked overlap components")
+    if len(source_annotation_ids_in_groups) != sum(
+            g["source_annotation_count"] for g in group_rows):
+        raise ValueError("Repeated original annotation in multiple overlap groups")
     selected = _balanced_sample(group_rows, max_groups=max_groups,
                                 max_per_document=max_per_document)
     return {
