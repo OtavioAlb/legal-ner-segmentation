@@ -6,14 +6,14 @@ local output paths, which must remain git-ignored.
 """
 from __future__ import annotations
 
-from .io.jsonl import read_jsonl, write_jsonl
-
 import argparse
 import hashlib
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+
+from .io.jsonl import read_jsonl, write_jsonl
 
 
 _read_jsonl = read_jsonl
