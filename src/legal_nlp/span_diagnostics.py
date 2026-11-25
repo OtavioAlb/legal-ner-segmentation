@@ -6,13 +6,13 @@ are not considered candidate conflicts in this report.
 """
 from __future__ import annotations
 
-from .io.jsonl import write_jsonl
-
 import argparse
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+
+from .io.jsonl import write_jsonl
 
 
 _write_jsonl = write_jsonl
