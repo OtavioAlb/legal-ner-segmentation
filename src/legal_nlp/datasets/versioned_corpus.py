@@ -114,12 +114,19 @@ def build_diagnostic_corpus(
     p1 = phase1_records(phase1)
     phase2_candidates = phase2_records(sheets)
     quarantine_records = []
-    text_integrity_counts = {}
-    if quarantine_unresolved:
-        affected, findings, text_integrity_counts = scan_phase2_regions(
-            paths["phase2_original"], paths["phase2_review_11"],
-            paths["phase2_review_17"], _text_from_task,
+    affected, findings, text_integrity_counts = scan_phase2_regions(
+        paths["phase2_original"], paths["phase2_review_11"],
+        paths["phase2_review_17"], _text_from_task,
+    )
+    if findings and not quarantine_unresolved:
+        first = findings[0]
+        raise ValueError(
+            "Unresolved Phase 2 source text mismatch "
+            f"in {first['idacordao']}/{first['region_id']} "
+            f"(project={first['project']}, reason={first['reason']}); "
+            "use --quarantine-unresolved for a diagnostic-only snapshot"
         )
+    if quarantine_unresolved:
         def relevant_region_ids(record):
             ids = {str(record["region_id"])}
             provenance = record.get("provenance")
