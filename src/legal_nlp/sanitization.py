@@ -6,8 +6,6 @@ Private generated data remains local beneath data/interim/.
 """
 from __future__ import annotations
 
-from .io.jsonl import read_jsonl, write_jsonl
-
 import argparse
 import json
 from collections import Counter
@@ -15,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from .audit import classify_mismatch
+
+from .io.jsonl import read_jsonl, write_jsonl
 
 
 _read_jsonl = read_jsonl
