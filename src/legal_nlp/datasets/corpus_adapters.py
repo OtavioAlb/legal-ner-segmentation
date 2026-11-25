@@ -138,7 +138,14 @@ def resolve_text(records: list[dict[str, Any]],
             raise ValueError(f"Invalid offsets in {doc_id}/{item['region_id']}")
         excerpt = full_text[start:end]
         if item["text"] and item["text"] != excerpt:
-            raise ValueError(f"Span-text mismatch in {doc_id}/{item['region_id']}")
+            raise ValueError(
+                f"Span-text mismatch in {doc_id}/{item['region_id']} "
+                f"(status={item['status']}, source_status={item['source_status']}, "
+                f"start={start}, end={end}, source_length={len(item['text'])}, "
+                f"document_slice_length={len(excerpt)}). "
+                "Run python -m legal_nlp.datasets.span_text_diagnostics "
+                "to inspect all mismatches without changing annotations."
+            )
         resolved.append({**item, "text": excerpt})
     return resolved
 
