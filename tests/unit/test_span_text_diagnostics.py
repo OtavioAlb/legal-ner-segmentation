@@ -35,12 +35,12 @@ def test_diagnostic_finds_all_regions_without_modifying_sources(tmp_path):
         ("17", 5, "abc\ndef"),
     ]:
         path = tmp_path / (name + ".json")
-        path.write_text(json.dumps([task(reviewer, excerpt, end=6 if name == "17" else 7)]), encoding="utf-8")
+        path.write_text(json.dumps([task(reviewer, excerpt)]), encoding="utf-8")
         p.append(path)
     before = [x.read_bytes() for x in p]
     result = inspect_phase2_text(*p)
-    assert result["candidate_count"] == 1
-    assert result["categories"] == {"literal_backslash_escapes_in_span": 1}
+    assert result["candidate_count"] == 3
+    assert result["categories"] == {"exact": 2, "literal_backslash_escapes_in_span": 1}
     assert result["findings"][0]["region_id"] == "r1"
     assert "source_text_repr" not in result["findings"][0]
     assert [x.read_bytes() for x in p] == before
