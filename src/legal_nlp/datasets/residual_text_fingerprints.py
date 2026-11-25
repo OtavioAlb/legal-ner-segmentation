@@ -64,7 +64,36 @@ def fingerprint(source: str, expected: str) -> dict:
     }
 
 
-def inspect_residuals(original, review_11, review_17) -> dict:
+def character_operations(source: str, expected: str) -> list[dict]:
+    """Provide exact changed Unicode codepoints, with no surrounding text.
+
+    Intended only for locally stored private diagnostic output. The codepoints
+    can still reveal content; never commit the output to version control.
+    """
+    matcher = difflib.SequenceMatcher(a=source, b=expected, autojunk=False)
+    changes = []
+    for tag, a0, a1, b0, b1 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        changes.append({
+            "operation": tag,
+            "source_range": [a0, a1],
+            "document_range": [b0, b1],
+            "source_codepoints": [
+                {"codepoint": f"U+{ord(char):04X}",
+                 "unicode_name": unicodedata.name(char, "UNASSIGNED")}
+                for char in source[a0:a1]
+            ],
+            "document_codepoints": [
+                {"codepoint": f"U+{ord(char):04X}",
+                 "unicode_name": unicodedata.name(char, "UNASSIGNED")}
+                for char in expected[b0:b1]
+            ],
+        })
+    return changes
+
+
+def inspect_residuals(original, review_11, review_17, *, include_codepoints=False) -> dict:
     exports = {
         "original": load(original),
         "11": load(review_11),
@@ -89,14 +118,17 @@ def inspect_residuals(original, review_11, review_17) -> dict:
                 if category != "other_mismatch":
                     continue
                 occurrence_count[project] += 1
-                groups[(doc, rid)].append({
+                item = {
                     "project": project,
                     "label": span["label"],
                     "start": start, "end": end,
                     "checkbox": choices.get(rid),
                     "category": category,
                     "fingerprint": fingerprint(raw, expected),
-                })
+                }
+                if include_codepoints:
+                    item["character_operations"] = character_operations(raw, expected)
+                groups[(doc, rid)].append(item)
     result = [
         {"idacordao": doc, "region_id": rid,
          "projects": sorted(rows, key=lambda item:
@@ -107,6 +139,7 @@ def inspect_residuals(original, review_11, review_17) -> dict:
     return {
         "schema_version": "1.0.0",
         "scope": "other_mismatch only",
+        "codepoints_included": include_codepoints,
         "occurrences": sum(occurrence_count.values()),
         "unique_regions_by_document_and_region_id": len(result),
         "by_project": dict(sorted(occurrence_count.items())),
@@ -122,12 +155,16 @@ def main() -> None:
     parser.add_argument("--evaluation-11", required=True, type=Path)
     parser.add_argument("--evaluation-17", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--include-codepoints", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError("Refusing to overwrite existing diagnostic report")
     if not args.output.parent.is_dir():
         raise FileNotFoundError("Create the output directory first")
-    result = inspect_residuals(args.original, args.evaluation_11, args.evaluation_17)
+    result = inspect_residuals(
+        args.original, args.evaluation_11, args.evaluation_17,
+        include_codepoints=args.include_codepoints,
+    )
     args.output.write_text(
         json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
