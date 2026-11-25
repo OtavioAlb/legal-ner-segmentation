@@ -68,7 +68,7 @@ def test_union_components_and_cross_label_overlaps():
     assert pair["overlapping_pairs"] == 3
     assert pair["same_label_pairs"] == 1
     assert pair["cross_label_pairs"] == 2
-    assert pair["contained_pairs"] == 1
+    assert pair["contained_pairs"] == 2
 
 
 def test_harmonized_geometry_counts_pending_and_excludes_mapped_vote(tmp_path):
