@@ -137,16 +137,35 @@ def resolve_text(records: list[dict[str, Any]],
                 or not (0 <= start < end <= len(full_text))):
             raise ValueError(f"Invalid offsets in {doc_id}/{item['region_id']}")
         excerpt = full_text[start:end]
-        if item["text"] and item["text"] != excerpt:
-            raise ValueError(
-                f"Span-text mismatch in {doc_id}/{item['region_id']} "
-                f"(status={item['status']}, source_status={item['source_status']}, "
-                f"start={start}, end={end}, source_length={len(item['text'])}, "
-                f"document_slice_length={len(excerpt)}). "
-                "Run python -m legal_nlp.datasets.span_text_diagnostics "
-                "to inspect all mismatches without changing annotations."
-            )
-        resolved.append({**item, "text": excerpt})
+        raw = item["text"]
+        if not raw:
+            # Consolidated review spans are reconstructed from the immutable
+            # document; no source excerpt is available in the audit row.
+            resolved.append({**item, "text": excerpt,
+                             "text_equivalence": "source_excerpt_unavailable"})
+            continue
+        if raw == excerpt:
+            resolved.append({**item, "text": excerpt, "text_equivalence": "exact"})
+            continue
+        # The only authorized source-format equivalence is replacing literal
+        # backslash-n and backslash-t with their control characters. Accept it
+        # ONLY if the entire resulting string equals the original document slice.
+        interpreted = raw.replace("\\n", "\n").replace("\\t", "\t")
+        if interpreted == excerpt:
+            resolved.append({
+                **item, "text": excerpt,
+                "text_equivalence": "verified_literal_backslash_escapes",
+                "source_text_raw": raw,
+            })
+            continue
+        raise ValueError(
+            f"Span-text mismatch in {doc_id}/{item['region_id']} "
+            f"(status={item['status']}, source_status={item['source_status']}, "
+            f"start={start}, end={end}, source_length={len(raw)}, "
+            f"document_slice_length={len(excerpt)}). "
+            "No automatic reconciliation for non-equivalent text; use "
+            "python -m legal_nlp.datasets.span_text_diagnostics."
+        )
     return resolved
 
 

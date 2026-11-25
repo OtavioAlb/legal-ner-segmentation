@@ -156,6 +156,14 @@ def build_diagnostic_corpus(
             for (phase, task, status), count in sorted(counts.items())
         ],
         "phase2_audit_metrics": metrics,
+        "phase2_text_equivalence": dict(sorted(
+            Counter(row.get("text_equivalence", "not_applicable") for row in p2).items()
+        )),
+        "text_equivalence_policy": (
+            "exact match OR literal \\n/\\t interpreted as control characters "
+            "only when resulting text equals the immutable document slice; "
+            "raw source excerpt retained"
+        ),
         "identity_policy": "phase-namespaced IDs; reject duplicate text and idacordao",
     }
     # All validation is completed before any output is created.
