@@ -4,8 +4,6 @@ All reports are local outputs beneath data/interim; never commit them publicly.
 """
 from __future__ import annotations
 
-from .io.jsonl import read_jsonl, write_jsonl
-
 import argparse
 import json
 import re
@@ -13,6 +11,8 @@ import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+from .io.jsonl import read_jsonl, write_jsonl
 
 
 _read_jsonl = read_jsonl
