@@ -74,7 +74,6 @@ def audit_phase1_lineage(snapshot, harmonized, taxonomy, raw_texts,
     phase1 = [r for r in harmonized_rows if r["phase"] == "phase_1"]
     if len(phase1) != len(derived_map) or len(logical_map) != len(derived_map):
         raise ValueError("Different logical-span counts in Phase 1 chain")
-    issue_counts = Counter()
     selection_counts = Counter()
     annotation_references = set()
     checked = 0
@@ -90,7 +89,8 @@ def audit_phase1_lineage(snapshot, harmonized, taxonomy, raw_texts,
         if row["document_id"] != "phase_1:" + adapted["document_id"]:
             raise ValueError(f"Document identity mismatch: {logical_id}")
         for field in ("label", "task", "start", "end"):
-            if row["source_" + field] != adapted[field] if field in ("label", "task") else row[field] != adapted[field]:
+            actual = row["source_" + field] if field in ("label", "task") else row[field]
+            if actual != adapted[field]:
                 raise ValueError(f"Phase 1 source field differs: {logical_id}/{field}")
         for field in ("document_id", "label", "task", "start", "end"):
             if logical_span[field] != adapted[field]:
@@ -116,6 +116,8 @@ def audit_phase1_lineage(snapshot, harmonized, taxonomy, raw_texts,
             for f in ("document_id", "label", "task", "start", "end"):
                 if sanit[f] != logical_span[f]:
                     raise ValueError(f"Sanitized span differs from logical source: {ann_id}/{f}")
+            if (sanit["start"] != ing["start"] or sanit["end"] != ing["end"]):
+                raise ValueError(f"Sanitized offsets differ from ingested target: {ann_id}")
             if (entry["source_row"] != ing["source_row"] or
                     entry["source_row"] != sanit["source_row"] or
                     entry.get("annotator_id") != sanit.get("annotator_id") or
