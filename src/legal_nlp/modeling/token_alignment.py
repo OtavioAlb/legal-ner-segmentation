@@ -46,13 +46,15 @@ def project_bilou(
     """
     if task not in {"NER", "SEG"} or not document_id or not isinstance(text, str):
         raise ValueError("Invalid document/task/text")
-    previous_end = 0
+    previous_start = -1
     for start, end in offsets:
         if any(type(x) is not int for x in (start, end)):
             raise AlignmentError("Tokenizer offsets must be integers")
-        if not 0 <= start < end <= len(text) or start < previous_end:
-            raise AlignmentError("Global subtoken offsets must be ordered and in bounds")
-        previous_end = end
+        if not 0 <= start < end <= len(text) or start < previous_start:
+            raise AlignmentError("Global subtoken offsets must have monotonic starts and valid bounds")
+        # Some tokenizers return overlapping intervals; validate actual
+        # conflicts only inside a supervised span, never hide them globally.
+        previous_start = start
 
     ordered = sorted(spans, key=lambda s: (s.start, s.end, s.label))
     for s in ordered:
@@ -68,16 +70,44 @@ def project_bilou(
 
     tags = ["O"] * len(offsets)
     for span in ordered:
+        # For whitespace-prefixed tokenizers, [start_of_space, end) and
+        # [start_of_word, end) can yield identical BILOU tags. The decoder
+        # consistently excludes leading whitespace; consequently a gold
+        # span that *includes* it is NOT losslessly representable.
+        # Preserve the gold unchanged and require an alternative
+        # span/boundary model or explicit adjudication for such regions.
+        if text[span.start].isspace():
+            raise AlignmentError(
+                "Leading-whitespace annotation boundary is ambiguous in flat BILOU"
+            )
         indexes = [
             i for i, (a, b) in enumerate(offsets)
             if a < span.end and span.start < b
         ]
         if not indexes:
             raise AlignmentError("Span has no tokenizer coverage")
-        if offsets[indexes[0]][0] != span.start or offsets[indexes[-1]][1] != span.end:
-            raise AlignmentError("Span boundary does not align with tokenizer offsets")
-        if any(a < span.start or b > span.end for a, b in (offsets[i] for i in indexes)):
-            raise AlignmentError("Tokenizer subtoken crosses span boundary")
+        first_start, first_end = offsets[indexes[0]]
+        # ByteLevel tokenizers may include the space preceding a word:
+        # [9,16) for a source annotation beginning at 10. Trim only
+        # whitespace in a *derived alignment boundary*, not source gold.
+        if first_start != span.start and not (
+            first_start < span.start < first_end
+            and text[first_start:span.start].isspace()
+        ):
+            raise AlignmentError("Span start boundary does not align with tokenizer offsets")
+        if offsets[indexes[-1]][1] != span.end:
+            raise AlignmentError("Span end boundary does not align with tokenizer offsets")
+        previous_content_end = -1
+        for i in indexes:
+            a, b = offsets[i]
+            if a < span.start and not text[a:span.start].isspace():
+                raise AlignmentError("Tokenizer subtoken crosses span boundary")
+            if b > span.end:
+                raise AlignmentError("Tokenizer subtoken crosses span boundary")
+            content_start = max(a, span.start)
+            if content_start < previous_content_end and not text[content_start:previous_content_end].isspace():
+                raise AlignmentError("Ambiguous overlapping token offsets inside annotated span")
+            previous_content_end = max(previous_content_end, b)
         if any(tags[i] != "O" for i in indexes):
             raise AlignmentError("Multiple spans would supervise the same token")
         if len(indexes) == 1:

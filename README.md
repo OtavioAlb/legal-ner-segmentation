@@ -101,8 +101,18 @@ docs/data_contract.md for the complete contract.
 
 ## Span boundary diagnostics (+/-10 characters)
 
-Both NER and SEG are trained as span-based tasks (not flat BIO).
-Overlaps between different labels are allowed. To flag only nearly
+The canonical source and evaluation contract is character-based spans
+`(document_id, start, end, label)` with exclusive `end` and lossless source
+provenance. Baseline experiments NER01/NER02 and SEG01 use **derived flat
+BILOU token labels** when the corresponding spans are exactly representable.
+The original spans are never replaced by BILOU, and unsupported overlaps,
+nesting or ambiguous whitespace endpoints must not be silently deleted,
+trimmed or declared `O`. Span-based NER03/NER04 and structural SEG02/SEG03
+remain separate experimental families. No existing snapshot is gold; training
+remains blocked until adjudication and explicit approval.
+
+See `docs/modeling/hf_v5_alignment_fix.md` for strict tokenizer alignment.
+Overlaps between different labels are preserved. To flag only nearly
 coincident boundaries, run:
 
 ~~~powershell

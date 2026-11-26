@@ -41,7 +41,9 @@ def run_smoke(config: Path, *, allow_download: bool = False) -> dict:
                 windows, [[tag or "O" for tag in w.bilou_tags] for w in windows],
                 len(document.input_ids),
             )
-            if decode_bilou(document, "NER", reconstructed) != [expected]:
+            if decode_bilou(
+                document, "NER", reconstructed, source_text=text
+            ) != [expected]:
                 raise ValueError("Round-trip span mismatch")
             results.append({
                 "encoder": key, "checkpoint": checkpoint, "status": "passed",

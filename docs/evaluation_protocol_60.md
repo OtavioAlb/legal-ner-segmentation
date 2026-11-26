@@ -63,9 +63,22 @@ treinamento ou na validação de cada fold e o suporte por classe.
 ## Unidades de avaliação e limitações
 
 - Uma única partição de documentos/processos para ambas as tarefas NER e SEG.
-- Supervisão e predição por **spans** (intervalos de caracteres, início inclusivo,
-  fim exclusivo), não BIO. Preservar sobreposições, aninhamentos e múltiplos
-  rótulos válidos.
+- O **contrato canônico** de anotação, predição e avaliação é por **spans**
+  (intervalos de caracteres, início inclusivo e fim exclusivo), independente
+  da arquitetura experimental. Preservar sobreposições, aninhamentos e múltiplos
+  rótulos válidos nas fontes; nenhuma conversão automática pode descartar regiões.
+- Baselines NER01/NER02 e SEG01 utilizam uma **representação BILOU derivada**
+  somente para regiões estritamente representáveis em uma sequência plana.
+  Regiões aninhadas, sobrepostas ou com limites não recuperáveis devem ser
+  diagnosticadas e não tratadas como negativas, nem excluídas do corpus gold.
+  O pipeline precisa contabilizar cobertura por documento/label e indicar
+  claramente a subpopulação representável, sem comparar injustamente métricas.
+- A reconstrução de spans em segmentos com espaços e quebras de linha depende
+  dos offsets do texto original. Um início de segmento em whitespace pode
+  ser indistinguível de um início após esse whitespace no tokenizer; a
+  projeção BILOU deve **falhar explicitamente** nesse caso, nunca deslocar
+  o gold silenciosamente. A segmentação por spans/hierarquia permanece
+  necessária para avaliar seções completas e aninhadas.
 - Métrica principal candidata: F1 por correspondência exata de
   (documento, início, fim, classe), informando micro e por classe; definir
   também antes dos experimentos o tratamento de classes com suporte zero.
