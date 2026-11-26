@@ -168,6 +168,8 @@ footer{margin:8px 14px 20px;color:#4e6274;font-size:12px}
 const data=JSON.parse(document.getElementById("dataset").textContent);
 const $=(id)=>document.getElementById(id);
 const decisions=[];
+// Python offsets count Unicode code points, not JavaScript UTF-16 code units.
+const textChars=Array.from(data.text);
 let active=null;
 const sortedFamilies=[...data.overlap_families];
 const allFamily={label:"Todas as regiões",ids:data.regions.map(r=>r.id)};
@@ -183,9 +185,9 @@ function textHighlight(region){
  const display=$("text");display.replaceChildren();
  if(!region){display.textContent=data.text;return}
  const s=region.start,e=region.end;
- display.append(document.createTextNode(data.text.slice(0,s)));
- const mark=node("mark","",data.text.slice(s,e));mark.id="current-highlight";display.append(mark);
- display.append(document.createTextNode(data.text.slice(e)));
+ display.append(document.createTextNode(textChars.slice(0,s).join("")));
+ const mark=node("mark","",textChars.slice(s,e).join(""));mark.id="current-highlight";display.append(mark);
+ display.append(document.createTextNode(textChars.slice(e).join("")));
  mark.scrollIntoView({block:"center",behavior:"instant"});
 }
 function showEvidence(region){
@@ -213,7 +215,7 @@ function renderRegions(){
  const family=families[Number($("family").value)||0];
  const ids=new Set(family.ids);
  const displayed=data.regions.filter(r=>ids.has(r.id));
- $("counts").textContent=displayed.length+" regiões · "+data.text.length+" caracteres no documento";
+ $("counts").textContent=displayed.length+" regiões · "+textChars.length+" caracteres no documento";
  const box=$("items");box.replaceChildren();
  displayed.forEach(r=>{
    const el=node("div","item"+(r.id===active?" active":""));
@@ -227,7 +229,7 @@ $("add").addEventListener("click",()=>{
  const start=Number($("start").value),end=Number($("end").value),reason=$("reason").value.trim();
  const decision=$("decision").value,label=$("decision-label").value;
  if(!active){alert("Selecione uma região de origem para fundamentar a proposta.");return}
- if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end>data.text.length||start>=end){
+ if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end>textChars.length||start>=end){
    alert("Offsets inválidos para o documento de origem.");return
  }
  if(!decision||reason.length<20||!$("confirmed").checked){
