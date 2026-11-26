@@ -267,3 +267,25 @@ def test_seg_whitespace_prefix_preserved_as_unchanged_source():
     tags = project_bilou(text, "doc", "SEG", [original], [(0, 1), (1, 10)])
     assert original.start == 2 and original.end == 10
     assert tags[-1] == "U-SEG_RELATORIO"
+
+
+def test_seg_full_section_over_multiple_512_windows_exact_roundtrip():
+    """A synthetic full section spanning windows is one canonical span."""
+    tokenizer = FakeFastTokenizer()
+    text = "X" * 400 + "\\n" + "Y" * 920 + "\\nZ"
+    gold = Span("long_doc", "SEG", "SEG_FUNDAMENTO_DECISAO", 401, 1321)
+    original_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    doc, windows = prepare_bilou_document(
+        tokenizer, "long_doc", text, "SEG", [gold],
+        max_length=512, stride=128,
+    )
+    assert len(windows) > 2
+    assert doc.text_sha256 == original_hash
+    assert sum(sum(w.loss_mask) for w in windows) == len(doc.input_ids)
+    tags = stitch_window_tags(
+        windows,
+        [[tag or "O" for tag in window.bilou_tags] for window in windows],
+        len(doc.input_ids),
+    )
+    assert decode_bilou(doc, "SEG", tags, source_text=text) == [gold]
+    assert text[gold.start:gold.end] == "Y" * 920
