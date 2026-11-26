@@ -12,6 +12,7 @@ dependencies = []
 [project.optional-dependencies]
 xlsx = ["openpyxl>=3.1"]
 dev = ["pytest>=8", "ruff>=0.8", "openpyxl>=3.1"]
+tokenization = ["transformers>=4.45,<6"]
 
 [project.scripts]
 legal-nlp-ingest-phase1 = "legal_nlp.cli:main"
