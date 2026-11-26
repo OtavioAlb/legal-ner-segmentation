@@ -19,6 +19,12 @@ class FakeFastTokenizer:
         self.bad_mask = bad_mask
 
     def __call__(self, text, **kwargs):
+        if kwargs.get("add_special_tokens"):
+            ids = [self.specials[0], *[ord(char) for char in text], *self.specials[1:]]
+            mask = [1, *([0] * len(text)), *([1] * (len(self.specials) - 1))]
+            if self.bad_mask:
+                mask[-1] = 2
+            return {"input_ids": ids, "special_tokens_mask": mask}
         assert kwargs == {
             "add_special_tokens": False,
             "return_offsets_mapping": True,
@@ -169,3 +175,37 @@ def test_load_tokenizer_does_not_download_by_default(monkeypatch):
     assert calls == [
         ("local/checkpoint", {"use_fast": True, "local_files_only": True})
     ]
+
+
+def test_bytelevel_prefix_whitespace_roundtrip():
+    from legal_nlp.modeling.token_alignment import project_bilou
+    text = "O Código Civil"
+    offsets = [(0, 1), (1, 8), (8, 14)]
+    gold = Span("id", "NER", "ENT_LEI_CODIFICADA", 2, 14)
+    tags = project_bilou(text, "id", "NER", [gold], offsets)
+    assert tags == ["O", "B-ENT_LEI_CODIFICADA", "L-ENT_LEI_CODIFICADA"]
+    from legal_nlp.modeling.hf_tokenizer_adapter import TokenizedDocument
+    doc = TokenizedDocument(
+        "id", hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        (1, 2, 3), tuple(offsets),
+    )
+    assert decode_bilou(doc, "NER", tags, source_text=text) == [gold]
+
+
+def test_overlapping_offsets_outside_gold_do_not_block_projection():
+    from legal_nlp.modeling.token_alignment import project_bilou
+    text = "a b Código"
+    # Two tokenizer tokens cover the same initial non-entity character.
+    offsets = [(0, 2), (0, 1), (2, 3), (3, 4), (4, 10)]
+    gold = Span("id", "NER", "ENT_TERMO_IA", 4, 10)
+    assert project_bilou(text, "id", "NER", [gold], offsets)[-1] == "U-ENT_TERMO_IA"
+
+
+def test_overlapping_non_whitespace_inside_gold_is_rejected():
+    from legal_nlp.modeling.token_alignment import project_bilou
+    text = "Código"
+    offsets = [(0, 4), (2, 6)]
+    with pytest.raises(AlignmentError, match="Ambiguous overlapping"):
+        project_bilou(text, "id", "NER", [
+            Span("id", "NER", "ENT_TERMO_IA", 0, 6),
+        ], offsets)
