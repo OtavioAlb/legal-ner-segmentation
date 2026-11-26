@@ -70,6 +70,16 @@ def project_bilou(
 
     tags = ["O"] * len(offsets)
     for span in ordered:
+        # For whitespace-prefixed tokenizers, [start_of_space, end) and
+        # [start_of_word, end) can yield identical BILOU tags. The decoder
+        # consistently excludes leading whitespace; consequently a gold
+        # span that *includes* it is NOT losslessly representable.
+        # Preserve the gold unchanged and require an alternative
+        # span/boundary model or explicit adjudication for such regions.
+        if text[span.start].isspace():
+            raise AlignmentError(
+                "Leading-whitespace annotation boundary is ambiguous in flat BILOU"
+            )
         indexes = [
             i for i, (a, b) in enumerate(offsets)
             if a < span.end and span.start < b
