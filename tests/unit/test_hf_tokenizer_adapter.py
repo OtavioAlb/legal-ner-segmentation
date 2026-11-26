@@ -209,3 +209,61 @@ def test_overlapping_non_whitespace_inside_gold_is_rejected():
         project_bilou(text, "id", "NER", [
             Span("id", "NER", "ENT_TERMO_IA", 0, 6),
         ], offsets)
+
+
+def test_seg_whitespace_or_newline_start_is_rejected_losslessly():
+    """BILOU cannot tell gold [0,2) from [1,2) with space-prefixed tokens."""
+    from legal_nlp.modeling.token_alignment import project_bilou
+    cases = [
+        (" Relatório", [(0, 10)], 0, 10),
+        ("\\nFundamento", [(0, 11)], 0, 11),
+        ("\\tEMENTA", [(0, 7)], 0, 7),
+    ]
+    for text, offsets, start, end in cases:
+        with pytest.raises(AlignmentError, match="Leading-whitespace"):
+            project_bilou(
+                text, "doc", "SEG",
+                [Span("doc", "SEG", "SEG_RELATORIO", start, end)],
+                offsets,
+            )
+
+
+def test_seg_section_boundary_excluding_whitespace_roundtrips():
+    """Source interval excludes line break; ByteLevel raw token begins before it."""
+    from legal_nlp.modeling.token_alignment import project_bilou
+    from legal_nlp.modeling.hf_tokenizer_adapter import TokenizedDocument
+
+    text = "A\\nRELATORIO"
+    offsets = [(0, 1), (1, 10)]
+    gold = Span("doc", "SEG", "SEG_RELATORIO", 2, 10)
+    tags = project_bilou(text, "doc", "SEG", [gold], offsets)
+    doc = TokenizedDocument(
+        "doc", hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        (1, 2), tuple(offsets),
+    )
+    assert decode_bilou(doc, "SEG", tags, source_text=text) == [gold]
+
+
+def test_seg_exact_whitespace_boundary_without_prefix_roundtrips():
+    """SEG starts on a word immediately after another section without prefix padding."""
+    tokenizer = FakeFastTokenizer()
+    text = "EMENTA:RELATORIO."
+    start = text.index("RELATORIO")
+    expected = Span("doc", "SEG", "SEG_RELATORIO", start, len(text))
+    doc, windows = prepare_bilou_document(
+        tokenizer, "doc", text, "SEG", [expected],
+        max_length=8, stride=2,
+    )
+    preds = [[tag or "O" for tag in w.bilou_tags] for w in windows]
+    actual = stitch_window_tags(windows, preds, len(doc.input_ids))
+    assert decode_bilou(doc, "SEG", actual, source_text=text) == [expected]
+
+
+def test_seg_whitespace_prefix_preserved_as_unchanged_source():
+    """Projected prefixes never mutate the annotation or source checksum."""
+    from legal_nlp.modeling.token_alignment import project_bilou
+    text = "A\\nRELATORIO"
+    original = Span("doc", "SEG", "SEG_RELATORIO", 2, 10)
+    tags = project_bilou(text, "doc", "SEG", [original], [(0, 1), (1, 10)])
+    assert original.start == 2 and original.end == 10
+    assert tags[-1] == "U-SEG_RELATORIO"
