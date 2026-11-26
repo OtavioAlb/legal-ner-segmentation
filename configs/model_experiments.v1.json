@@ -1,0 +1,122 @@
+{
+  "schema_version": "1.0",
+  "status": "design_only",
+  "training_ready": false,
+  "encoder_benchmark": {
+    "selection": "five_encoders_frozen",
+    "encoders": [
+      {
+        "key": "bertimbau",
+        "checkpoint": "neuralmind/bert-base-portuguese-cased",
+        "role": "historic_pt_baseline"
+      },
+      {
+        "key": "robertalexpt",
+        "checkpoint": "eduagarcia/RoBERTaLexPT-base",
+        "role": "pt_legal"
+      },
+      {
+        "key": "norberto",
+        "checkpoint": "Itau-Unibanco/NorBERTo-base",
+        "role": "pt_modernbert"
+      },
+      {
+        "key": "xlm_roberta",
+        "checkpoint": "FacebookAI/xlm-roberta-base",
+        "role": "general_multilingual"
+      },
+      {
+        "key": "moberto",
+        "checkpoint": "Tropic-AI/moBERTo",
+        "role": "pt_modernbert_continued_pretraining"
+      }
+    ],
+    "token_window": {
+      "max_length": 512,
+      "stride": 128,
+      "full_document_offsets": true
+    },
+    "compare_on": [
+      "exact_span_f1",
+      "per_class_f1",
+      "tokenization_fragmentation",
+      "inference_latency",
+      "peak_vram"
+    ],
+    "note": "All five encoders screened in flat BILOU task-specific baselines. Long-context ablation is separate; test data must remain untouched."
+  },
+  "experiments": [
+    {
+      "id": "NER01",
+      "family": "token_BILOU",
+      "encoder_keys": [
+        "bertimbau"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "NER02",
+      "family": "token_BILOU",
+      "encoder_keys": [
+        "robertalexpt",
+        "norberto",
+        "xlm_roberta",
+        "moberto"
+      ],
+      "depends_on": [
+        "NER01"
+      ]
+    },
+    {
+      "id": "NER03",
+      "family": "span_based_NER",
+      "encoder_keys": "top_two_ner_screening",
+      "depends_on": [
+        "NER01",
+        "NER02"
+      ]
+    },
+    {
+      "id": "NER04",
+      "family": "hierarchical_span_NER",
+      "encoder_keys": "top_two_ner_screening",
+      "depends_on": [
+        "NER03"
+      ]
+    },
+    {
+      "id": "SEG01",
+      "family": "token_BILOU",
+      "encoder_keys": [
+        "bertimbau",
+        "robertalexpt",
+        "norberto",
+        "xlm_roberta",
+        "moberto"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "SEG02",
+      "family": "section_boundary_and_long_spans",
+      "encoder_keys": "top_two_seg_screening",
+      "depends_on": [
+        "SEG01"
+      ]
+    },
+    {
+      "id": "SEG03",
+      "family": "hierarchical_document_sections",
+      "encoder_keys": "top_two_seg_screening",
+      "depends_on": [
+        "SEG02"
+      ]
+    }
+  ],
+  "guards": {
+    "train_only_approved_adjudicated_gold": true,
+    "keep_diagnostic_training_ready_false": true,
+    "never_prune_overlaps_silently": true,
+    "do_not_select_splits_until_process_grouping": true
+  }
+}
