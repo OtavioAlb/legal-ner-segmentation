@@ -216,8 +216,8 @@ def test_seg_whitespace_or_newline_start_is_rejected_losslessly():
     from legal_nlp.modeling.token_alignment import project_bilou
     cases = [
         (" Relatório", [(0, 10)], 0, 10),
-        ("\\nFundamento", [(0, 11)], 0, 11),
-        ("\\tEMENTA", [(0, 7)], 0, 7),
+        ("\nFundamento", [(0, 11)], 0, 11),
+        ("\tEMENTA", [(0, 7)], 0, 7),
     ]
     for text, offsets, start, end in cases:
         with pytest.raises(AlignmentError, match="Leading-whitespace"):
@@ -233,7 +233,7 @@ def test_seg_section_boundary_excluding_whitespace_roundtrips():
     from legal_nlp.modeling.token_alignment import project_bilou
     from legal_nlp.modeling.hf_tokenizer_adapter import TokenizedDocument
 
-    text = "A\\nRELATORIO"
+    text = "A\nRELATORIO"
     offsets = [(0, 1), (1, 10)]
     gold = Span("doc", "SEG", "SEG_RELATORIO", 2, 10)
     tags = project_bilou(text, "doc", "SEG", [gold], offsets)
@@ -262,7 +262,7 @@ def test_seg_exact_whitespace_boundary_without_prefix_roundtrips():
 def test_seg_whitespace_prefix_preserved_as_unchanged_source():
     """Projected prefixes never mutate the annotation or source checksum."""
     from legal_nlp.modeling.token_alignment import project_bilou
-    text = "A\\nRELATORIO"
+    text = "A\nRELATORIO"
     original = Span("doc", "SEG", "SEG_RELATORIO", 2, 10)
     tags = project_bilou(text, "doc", "SEG", [original], [(0, 1), (1, 10)])
     assert original.start == 2 and original.end == 10
@@ -272,7 +272,7 @@ def test_seg_whitespace_prefix_preserved_as_unchanged_source():
 def test_seg_full_section_over_multiple_512_windows_exact_roundtrip():
     """A synthetic full section spanning windows is one canonical span."""
     tokenizer = FakeFastTokenizer()
-    text = "X" * 400 + "\\n" + "Y" * 920 + "\\nZ"
+    text = "X" * 400 + "\n" + "Y" * 920 + "\nZ"
     gold = Span("long_doc", "SEG", "SEG_FUNDAMENTO_DECISAO", 401, 1321)
     original_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
     doc, windows = prepare_bilou_document(
