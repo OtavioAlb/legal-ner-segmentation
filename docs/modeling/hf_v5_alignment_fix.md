@@ -30,6 +30,15 @@ encoder choices, supervision readiness, or private documents.
 4. `decode_bilou(..., source_text=original_text)` removes the leading
    whitespace from the *prediction boundary only*, after verifying the
    document SHA-256. Production callers must provide the source text.
+   **Formal limitation:** BILOU cannot distinguish a gold span including a
+   leading whitespace character from a span whose start excludes it when
+   the tokenizer bundles that whitespace with the first word. Accordingly,
+   `project_bilou` rejects source spans whose first character is whitespace,
+   rather than allowing the decoder to shift their boundaries. This is an
+   explicit unsupported case, not evidence that the gold is erroneous.
+   These regions must remain in the canonical data and be handled by a
+   compatible span/boundary model or adjudicated policy; do not relabel as `O`.
+   Synthetic regression tests exercise spaces, newlines and long windows.
 5. The `tokenizer_smoke` now uses this source-verified reconstruction.
 6. No training, gold promotion, corpus rewrite, merging or model-weight load.
 
