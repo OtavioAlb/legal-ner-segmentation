@@ -75,7 +75,7 @@ def tokenize_document(tokenizer: Any, document_id: str, text: str) -> TokenizedD
     if (not isinstance(ids, (list, tuple))
             or not isinstance(offsets, (list, tuple)) or len(ids) != len(offsets)):
         raise TokenizerAdapterError("Invalid untruncated fast-tokenizer encoding")
-    previous_end = 0
+    previous_start = -1
     for token_id, pair in zip(ids, offsets):
         if type(token_id) is not int:
             raise TokenizerAdapterError("Token IDs must be integers")
@@ -83,15 +83,43 @@ def tokenize_document(tokenizer: Any, document_id: str, text: str) -> TokenizedD
                 or any(type(v) is not int for v in pair)):
             raise TokenizerAdapterError("Invalid offset pair")
         start, end = pair
-        if not 0 <= start < end <= len(text) or start < previous_end:
-            raise TokenizerAdapterError("Offsets are not monotonic nonempty character intervals")
-        previous_end = end
+        if not 0 <= start < end <= len(text) or start < previous_start:
+            raise TokenizerAdapterError("Offsets have invalid bounds or nonmonotonic starts")
+        previous_start = start
     return TokenizedDocument(
         document_id=document_id,
         text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         input_ids=tuple(ids),
         offsets=tuple(tuple(pair) for pair in offsets),
     )
+
+
+def _special_template(tokenizer: Any) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Probe fixed single-sequence prefix/suffix IDs on two synthetic texts.
+
+    Transformers 5 no longer offers prepare_for_model. Reject any special
+    tokens interleaved with content or context-dependent templates.
+    """
+    configs = []
+    for probe in ("Alvo", "texto português"):
+        encoded = tokenizer(
+            probe, add_special_tokens=True, truncation=False, padding=False,
+            return_special_tokens_mask=True, return_attention_mask=False,
+        )
+        ids = list(encoded["input_ids"])
+        masks = list(encoded["special_tokens_mask"])
+        if len(ids) != len(masks) or any(m not in (0, 1) for m in masks):
+            raise TokenizerAdapterError("Malformed special-token probe")
+        content = [i for i, m in enumerate(masks) if m == 0]
+        if not content or content != list(range(content[0], content[-1] + 1)):
+            raise TokenizerAdapterError("Noncontiguous content in special-token template")
+        configs.append((tuple(ids[:content[0]]), tuple(ids[content[-1] + 1:])))
+    if configs[0] != configs[1]:
+        raise TokenizerAdapterError("Context-dependent special-token template")
+    declared = tokenizer.num_special_tokens_to_add(pair=False)
+    if type(declared) is not int or declared != sum(map(len, configs[0])):
+        raise TokenizerAdapterError("Declared special-token count differs from probe")
+    return configs[0]
 
 
 def encode_windows(
@@ -110,24 +138,18 @@ def encode_windows(
     _check_fast(tokenizer)
     if tags is not None and len(tags) != len(document.input_ids):
         raise TokenizerAdapterError("BILOU vector length differs from global tokens")
-    count = tokenizer.num_special_tokens_to_add(pair=False)
-    if type(count) is not int or count < 0:
-        raise TokenizerAdapterError("Invalid number of special tokens")
+    prefix, suffix = _special_template(tokenizer)
     windows = plan_windows(
         len(document.input_ids), max_length=max_length, stride=stride,
-        special_tokens_count=count,
+        special_tokens_count=len(prefix) + len(suffix),
     )
     outputs: list[PreparedWindow] = []
     for index, bounds in enumerate(windows):
         raw_ids = list(document.input_ids[bounds.start:bounds.end])
-        prepared = tokenizer.prepare_for_model(
-            raw_ids, add_special_tokens=True, truncation=False, padding=False,
-            return_attention_mask=True, return_special_tokens_mask=True,
-        )
-        ids = prepared["input_ids"]
-        masks = prepared["special_tokens_mask"]
-        attention = prepared["attention_mask"]
-        types = prepared.get("token_type_ids")
+        ids = [*prefix, *raw_ids, *suffix]
+        masks = [*([1] * len(prefix)), *([0] * len(raw_ids)), *([1] * len(suffix))]
+        attention = [1] * len(ids)
+        types = None
         if not all(isinstance(x, (tuple, list)) for x in (ids, masks, attention)):
             raise TokenizerAdapterError("Malformed tokenizer window")
         if len(ids) > max_length or not (len(ids) == len(masks) == len(attention)):
@@ -225,10 +247,15 @@ def stitch_window_tags(
 
 def decode_bilou(
     document: TokenizedDocument, task: str, tags: Sequence[str],
+    *, source_text: str | None = None,
 ) -> list[Span]:
     """Strict document-global BILOU decoder to source character intervals."""
     if task not in {"NER", "SEG"} or len(tags) != len(document.offsets):
         raise TokenizerAdapterError("Invalid task or BILOU length")
+    if source_text is not None and hashlib.sha256(
+        source_text.encode("utf-8")
+    ).hexdigest() != document.text_sha256:
+        raise TokenizerAdapterError("Source text checksum mismatch")
     output: list[Span] = []
     current_label: str | None = None
     current_start: int | None = None
@@ -244,6 +271,10 @@ def decode_bilou(
         prefix, label = tag[0], tag[2:]
         if not label.startswith("ENT_" if task == "NER" else "SEG_"):
             raise TokenizerAdapterError("BILOU label/task mismatch")
+        if prefix in {"B", "U"} and source_text is not None:
+            # ByteLevel token raw offsets include the whitespace before a word.
+            while start < end and source_text[start].isspace():
+                start += 1
         if prefix == "U":
             if current_label is not None:
                 raise TokenizerAdapterError("Unclosed span before U")
