@@ -83,9 +83,8 @@ mas não executa adjudicação automática, não fecha lacunas nem
 verifica cobertura global, não decide hierarquias entre labels e não
 resolve concorrentemente edições de vários avaliadores. Propostas
 são baixadas pelo navegador, não persistidas em servidor; exporte-as
-antes de fechar a aba. Offsets são indexados em caracteres Python;
-o navegador JavaScript utiliza unidades UTF-16: para textos com
-caracteres fora do plano multilíngue básico antes das regiões,
-o destaque visual pode precisar de ajuste (a auditoria Python
-continua usando os offsets corretos). Não promova o JSON
+antes de fechar a aba. Offsets são indexados em caracteres Python; o HTML converte
+explicitamente o texto para pontos de código Unicode ao destacar
+e validar limites, evitando a divergência com unidades UTF-16
+do JavaScript. Não promova o JSON
 diretamente a dataset supervisionado.
